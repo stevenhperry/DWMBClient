@@ -1,17 +1,17 @@
-﻿using FcomClient.FsdDetection;
-using FcomClient.Diagnostics;
+﻿using DWMBClient.FsdDetection;
+using DWMBClient.Diagnostics;
 using System;
 using System.Collections.Generic;
 using SharpPcap;
-using FcomClient.Serialization;
-using FcomClient.FsdObject;
+using DWMBClient.Serialization;
+using DWMBClient.FsdObject;
 using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;       // for hiding the console window
 using System.IO.Pipes;
 
-namespace FcomClient.UI
+namespace DWMBClient.UI
 {
-	class FcomClient
+	class DWMBClient
 	{
 		// The following DLLImports are for hiding the console window
 		[DllImport("kernel32.dll")]
@@ -41,7 +41,7 @@ namespace FcomClient.UI
 			bool isStartedWithArgs = (args.Length == 2);
 
 			try {
-				logger.Log("Starting FcomClient...");
+				logger.Log("Starting DWMBClient...");
 
 				bool isInputValid = false;
 				Regex callsignFormat = new Regex(@"^(\d|\w|_|-)+$");
@@ -212,7 +212,7 @@ namespace FcomClient.UI
 				// Dump stack trace to logfile
 				logger.Log("[CRASH] " + ex.ToString());
 
-				Console.WriteLine("\nFcomClient has crashed! Please see log.txt for error details.\n");
+				Console.WriteLine("\nDWMBClient has crashed! Please see log.txt for error details.\n");
 
 				if (args.Length == 0)
 				{
@@ -280,7 +280,7 @@ namespace FcomClient.UI
 					{
 						am.ForwardMessage(pm);
 					}
-					catch (FcomApiException ex)
+					catch (DWMBApiException ex)
 					{
 						logger.Log(ex.Message);
 					}

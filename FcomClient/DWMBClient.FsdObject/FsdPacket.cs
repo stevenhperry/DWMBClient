@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace FcomClient.FsdObject
+namespace DWMBClient.FsdObject
 {
 	/// <summary>
 	/// Representation of a FSD packet.

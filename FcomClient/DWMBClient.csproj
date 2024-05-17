@@ -79,20 +79,20 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="FcomClient.Diagnostics\Logger.cs" />
-    <Compile Include="FcomClient.FsdDetection\ConnectionManager.cs" />
-    <Compile Include="FcomClient.FsdDetection\HardwareDevice.cs" />
-    <Compile Include="FcomClient.FsdObject\FsdPacket.cs" />
-    <Compile Include="FcomClient.FsdObject\FsdMessage.cs" />
-    <Compile Include="FcomClient.FsdObject\AbstractFsdPacket.cs" />
-    <Compile Include="FcomClient.FsdObject\PrivateMessage.cs" />
-    <Compile Include="FcomClient.Serialization\ApiManager.cs" />
-    <Compile Include="FcomClient.Serialization\ApiObjects\ForwardedMessage.cs" />
-    <Compile Include="FcomClient.Serialization\ApiObjects\MessageForwardRequest.cs" />
-    <Compile Include="FcomClient.Serialization\ApiObjects\ServerRegistration.cs" />
-    <Compile Include="FcomClient.Serialization\FcomApiException.cs" />
-    <Compile Include="FcomClient.Serialization\MessageForwarder.cs" />
-    <Compile Include="FcomClient.UI\FcomClient.cs" />
+    <Compile Include="DWMBClient.Diagnostics\Logger.cs" />
+    <Compile Include="DWMBClient.FsdDetection\ConnectionManager.cs" />
+    <Compile Include="DWMBClient.FsdDetection\HardwareDevice.cs" />
+    <Compile Include="DWMBClient.FsdObject\FsdPacket.cs" />
+    <Compile Include="DWMBClient.FsdObject\FsdMessage.cs" />
+    <Compile Include="DWMBClient.FsdObject\AbstractFsdPacket.cs" />
+    <Compile Include="DWMBClient.FsdObject\PrivateMessage.cs" />
+    <Compile Include="DWMBClient.Serialization\ApiManager.cs" />
+    <Compile Include="DWMBClient.Serialization\ApiObjects\ForwardedMessage.cs" />
+    <Compile Include="DWMBClient.Serialization\ApiObjects\MessageForwardRequest.cs" />
+    <Compile Include="DWMBClient.Serialization\ApiObjects\ServerRegistration.cs" />
+    <Compile Include="DWMBClient.Serialization\DWMBApiException.cs" />
+    <Compile Include="DWMBClient.Serialization\MessageForwarder.cs" />
+    <Compile Include="DWMBClient.UI\DWMBClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace FcomClient.Serialization.ApiObjects
+namespace DWMBClient.Serialization.ApiObjects
 {
 	public class ForwardedMessage
 	{

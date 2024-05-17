@@ -2,7 +2,7 @@
 using System.Net;
 using SharpPcap;
 
-namespace FcomClient.FsdDetection
+namespace DWMBClient.FsdDetection
 {
 	/// <summary>
 	/// Helper class for managing network connections.

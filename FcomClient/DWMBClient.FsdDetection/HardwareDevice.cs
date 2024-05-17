@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 
-namespace FcomClient.FsdDetection
+namespace DWMBClient.FsdDetection
 {
 	/// <summary>
 	/// A wrapper for SharpPcap's ICaptureDevice.

@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using RestSharp.Serializers;
 
-namespace FcomClient.Serialization.ApiObjects
+namespace DWMBClient.Serialization.ApiObjects
 {
 	/// <summary>
 	/// Represents a message forwarding request.

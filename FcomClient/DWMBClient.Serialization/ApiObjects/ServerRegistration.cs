@@ -1,6 +1,6 @@
 ﻿using RestSharp.Deserializers;
 
-namespace FcomClient.Serialization.ApiObjects
+namespace DWMBClient.Serialization.ApiObjects
 {
 	/// <summary>
 	/// Represents API response containing the server registration.

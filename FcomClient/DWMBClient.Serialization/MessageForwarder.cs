@@ -1,8 +1,8 @@
 ﻿using System;
 using RestSharp;
-using FcomClient.FsdObject;
+using DWMBClient.FsdObject;
 
-namespace FcomClient.Serialization
+namespace DWMBClient.Serialization
 {
 	class MessageForwarder
 	{

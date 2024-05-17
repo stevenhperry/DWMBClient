@@ -5,12 +5,12 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("FcomClient")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("DWMBClient")]
+[assembly: AssemblyDescription("A redevelopment of Norris Ng's FCOM")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("FcomClient")]
-[assembly: AssemblyCopyright("Norris Ng")]
+[assembly: AssemblyProduct("DWMBClient")]
+[assembly: AssemblyCopyright("Steve Perry")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -31,5 +31,5 @@ using System.Runtime.InteropServices;
 //
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
-[assembly: AssemblyVersion("0.9.2")]
-//[assembly: AssemblyFileVersion("0.9.2")]
+[assembly: AssemblyVersion("0.9.3")]
+

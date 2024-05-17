@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace FcomClient.Diagnostics
+namespace DWMBClient.Diagnostics
 {
 	class Logger
 	{

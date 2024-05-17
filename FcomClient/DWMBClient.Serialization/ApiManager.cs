@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using FcomClient.Serialization.ApiObjects;
+using DWMBClient.Serialization.ApiObjects;
 using RestSharp;
 using RestSharp.Deserializers;
 
-namespace FcomClient.Serialization
+namespace DWMBClient.Serialization
 {
 	/// <summary>
 	/// A wrapper for the FCOM server API.
@@ -14,7 +14,7 @@ namespace FcomClient.Serialization
 		/// <summary>
 		/// User agent string to use.
 		/// </summary>
-		private readonly string CLIENT_VERSION = "FcomClient/0.9.2";
+		private readonly string CLIENT_VERSION = "DWMBClient/0.9.3";
 		
 		/// <summary>
 		/// Server address, read from the file server_location.txt
@@ -32,7 +32,7 @@ namespace FcomClient.Serialization
 		public readonly string REGISTRATION_ENDPOINT = "/api/v1/register";
 
 		/// <summary>
-		/// API registration token, provided by the bot and entered into FcomClient by the user.
+		/// API registration token, provided by the bot and entered into DWMBClient by the user.
 		/// </summary>
 		public string Token { get; set; }
 
@@ -164,7 +164,7 @@ namespace FcomClient.Serialization
 			}
 			else
 			{
-				throw new FcomApiException(String.Format("[Message forwarding error] {0}", response.Content));
+				throw new DWMBApiException(String.Format("[Message forwarding error] {0}", response.Content));
 			}
 
 		}
