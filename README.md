@@ -20,6 +20,6 @@ LATER
 
 ## More info ##
 
-Website: [later]
+Website: [www.DontWallopMeBro.com]
 
 Discord server: [https://discord.gg/F59CyKC](https://discord.gg/GmfhdrKBSw)
