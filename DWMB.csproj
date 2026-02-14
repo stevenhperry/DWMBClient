@@ -1,0 +1,47 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>DWMB_AIO</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>DWMB32.ico</ApplicationIcon>
+    <PlatformTarget>x64</PlatformTarget>
+    <StartupObject>DWMB_AIO.App</StartupObject>
+
+    <!-- Add these to control versions produced by the build -->
+    <Version>0.11.02</Version>                <!-- NuGet / package / product version -->
+    <AssemblyVersion>0.11.02</AssemblyVersion> <!-- runtime binding version -->
+    <FileVersion>0.11.02</FileVersion>       <!-- file property shown in Explorer -->
+    <InformationalVersion>0.11.02</InformationalVersion> <!-- product display (semver+metadata) -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="DWMB AutoPilot Icon.png" />
+    <None Remove="DWMB32.png" />
+    <None Remove="kofi_qrcode.png" />
+    <None Remove="server_location.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="DWMB32.ico" />
+    <Content Include="server_location.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PacketDotNet" Version="1.4.8" />
+    <PackageReference Include="RestSharp" Version="112.1.0" />
+    <PackageReference Include="SharpPcap" Version="6.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="DWMB AutoPilot Icon.png" />
+    <Resource Include="DWMB32.png" />
+    <Resource Include="kofi_qrcode.png" />
+  </ItemGroup>
+
+</Project>
