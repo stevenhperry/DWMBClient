@@ -1,6 +1,7 @@
 ﻿using DWMB_AIO.DWMB.Serialization.ApiObjects;
 using RestSharp;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 
 namespace DWMB_AIO.DWMB.Serialization
 {
@@ -16,6 +17,7 @@ namespace DWMB_AIO.DWMB.Serialization
         private readonly string REGISTRATION_ENDPOINT = "/api/v1/register";
         private readonly string DEREGISTRATION_ENDPOINT = "/api/v1/deregister";
         private readonly string TEST_ENDPOINT = "/api/v1/test";
+        private readonly string HEARTBEAT_ENDPOINT = "/api/v1/heartbeat";
         public required string Token { get; set; }
         public required string Callsign { get; set; }
 
@@ -25,6 +27,7 @@ namespace DWMB_AIO.DWMB.Serialization
         private RestSharp.RestClient client;
         public bool IsRegistered { get; set; } = false;
         public bool IsCapturing { get; set; } = false;
+
 
         [SetsRequiredMembers]
         public ApiManager(string token, string callsign)
@@ -74,6 +77,8 @@ namespace DWMB_AIO.DWMB.Serialization
                 else
                 {
                     this.IsRegistered = true;
+                    // Start sending periodic heartbeats
+                    StartHeartbeatTimer();
                     return true; // registration successful
                 }
             }
@@ -99,6 +104,8 @@ namespace DWMB_AIO.DWMB.Serialization
             if (string.Equals("ok", content, StringComparison.OrdinalIgnoreCase))
             {
                 this.IsRegistered = false;
+                // Stop sending periodic heartbeats when deregistered
+                StopHeartbeatTimer();
                 return true;
             }
             else
@@ -201,6 +208,56 @@ namespace DWMB_AIO.DWMB.Serialization
 
         }
 
+        public void SendHeartbeat()
+        {
+            RestRequest heartbeatRequest = new RestRequest(HEARTBEAT_ENDPOINT, Method.Get);
+            heartbeatRequest.AddParameter("token", this.Token);
+            heartbeatRequest.OnBeforeDeserialization = resp => { resp.ContentType = "application/json"; };
+            var response = client.Execute(heartbeatRequest);
+            if (response.IsSuccessful)
+            {
+                Console.WriteLine(" -- Heartbeat successful.");
+            }
+            else
+            {
+                Console.WriteLine(" -- Heartbeat failed.");
+            }
+        }
+        // Timer used to periodically send heartbeats while registered
+        private Timer? heartbeatTimer;
+        private readonly int HEARTBEAT_INTERVAL_MS = 55_000; //55 seconds, slightly less than 1 minute to ensure it is received.  Server is configured to allow up to 3 minutes between heartbeats before considering client disconnected.
 
+        private void StartHeartbeatTimer()
+        {
+            // Ensure any existing timer is stopped first
+            StopHeartbeatTimer();
+
+            // Schedule periodic heartbeats. First heartbeat will occur after HEARTBEAT_INTERVAL_MS.
+            heartbeatTimer = new Timer(_ =>
+            {
+                try
+                {
+                    SendHeartbeat();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($" -- Heartbeat exception: {ex.Message}");  // except we do not use console logging in the final product, so this is just for debugging purposes.  In production, we might want to log this to a file or other logging system.
+                    //TODO: add logging of heartbeat exceptions to a file or other logging system, since console logging is not used in the final product.
+                }
+            }, null, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS);
+        }
+
+        private void StopHeartbeatTimer()
+        {
+            if (heartbeatTimer != null)
+            {
+                try
+                {
+                    heartbeatTimer.Dispose();
+                }
+                catch { }
+                heartbeatTimer = null;
+            }
+        }
     }
 }

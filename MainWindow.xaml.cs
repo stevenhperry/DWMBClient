@@ -228,6 +228,9 @@ namespace DWMB_AIO
                 BeginCapture();
                 am.IsCapturing = true;
 
+                //TODO: start heartbeat timer here and stop it in the Stop() function.  Also, consider whether we need to send a final heartbeat on shutdown to let the server know we're gone.
+                                
+
                 // Success
                 return (true, null);
             }
@@ -253,14 +256,6 @@ namespace DWMB_AIO
             {
                 pktString = Encoding.UTF8.GetString(tcpPacket.PayloadData);
             }
-
-            // ******  DEBUGGING 16OCT25 ******
-            // I'm getting messages in triplicate.  It seems the packets are coming through 3x.
-            // logger.Log(string.Format("***PACKET*** {0}", pktString));
-            // Confirmed that the #TM packets are being sent in triplicate.  Appears to only be the #TM's though.
-            // Testing by sending through two PMs in quick succession.  Actually, got one message repeated as 4 packets, and the other as 3 packets.
-            // Proposed solution - ignore duplicate packets that arrive within a certain time window (e.g. 1 second).
-            // ******  DEBUGGING 16OCT25 ******
 
 
             // Split the packet into individual lines
