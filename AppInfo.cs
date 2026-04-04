@@ -12,7 +12,7 @@ namespace DWMB_AIO
             {
                 // Prefer informational version (may contain SemVer + metadata), then file version, then assembly version
                 var info = Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
-                if (!string.IsNullOrWhiteSpace(info)) return info;
+                if (!string.IsNullOrWhiteSpace(info)) return info.Split('+')[0]; // Strip build metadata
 
                 var file = Assembly.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
                 if (!string.IsNullOrWhiteSpace(file)) return file;

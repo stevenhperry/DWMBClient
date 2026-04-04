@@ -48,8 +48,7 @@
         <TextBox Name="txtStatusCapture" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="-200,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing forwarding status." FontSize="10"/>
 
         <!-- Version box (now pulls from assembly attributes generated from the csproj) -->
-        <Label Name="labelVersion" Content="{x:Static local:AppInfo.DisplayVersion}" HorizontalAlignment="Left" VerticalAlignment="bottom" FontSize="8"/>
-        <!-- Remember to change this in the ApiManager class as well!!! -->
+        <Label Name="labelVersion" Content="{x:Static local:AppInfo.DisplayVersion}" ContentStringFormat="v {0}" HorizontalAlignment="Left" VerticalAlignment="Bottom" FontSize="8"/>
 
     </Grid>
 </Window>
