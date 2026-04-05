@@ -58,7 +58,7 @@ namespace DWMB_AIO.DWMB.Serialization
         {
 
             RestRequest registerRequest = new RestRequest(REGISTRATION_ENDPOINT, Method.Get);
-            client.AddDefaultHeader("User-Agent", CLIENT_VERSION);
+            //client.AddDefaultHeader("User-Agent", CLIENT_VERSION);  //getting duplicates in header.  Removing this one, relying on the one set in the RestClientOptions in the constructor.
             registerRequest.AddParameter("token", token);
             registerRequest.AddParameter("callsign", callsign);
             registerRequest.OnBeforeDeserialization = resp => { resp.ContentType = "application/json"; };
