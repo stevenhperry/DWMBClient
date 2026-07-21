@@ -14,8 +14,13 @@ trying to reach them, so they don't get "walloped" for going unresponsive.
 - **Platform:** Windows only (`net9.0-windows`, WPF, x64).
 - **Language/runtime:** C# / .NET 9.
 - **UI:** WPF (`MainWindow.xaml`).
-- **Packet capture:** Requires [Npcap](https://npcap.com/) (or WinPcap) installed on
-  the host for SharpPcap to enumerate devices and capture traffic.
+- **Packet capture:** Requires a libpcap driver installed on the host for SharpPcap
+  to enumerate devices and capture traffic. [Npcap](https://npcap.com/) is
+  recommended (WinPcap is deprecated). The code uses SharpPcap's driver-agnostic
+  capture API (`CaptureDeviceList.Instance`, `ICaptureDevice`, `DeviceModes`), with
+  no WinPcap-specific calls, so it works with either driver. Originally developed
+  against WinPcap; Npcap compatibility is verified by code review but not
+  exhaustively tested on hardware.
 
 ## Build & run
 
