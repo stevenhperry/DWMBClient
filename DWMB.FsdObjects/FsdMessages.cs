@@ -12,7 +12,7 @@
         {
             string[] contents = packetString.Split(':');
 
-            //prase message fields
+            //parse message fields
             //format #TM<sender>:<recipient>:<message>
             for (int i = 0; i < contents.Length; i++)
             {
@@ -25,7 +25,7 @@
                     case 1:
                         //second field contains recipient
                         //If it is a frequency message, it'll be addressed to "@xxyyy" (i.e. 1xx.yyy MHz)
-                        //Keep the "@" so that tyhe server knows it's a frequency message
+                        //Keep the "@" so that the server knows it's a frequency message
                         base.Recipient = contents[i];
                         break;
                     case 2:

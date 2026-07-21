@@ -63,7 +63,7 @@ namespace DWMB_AIO
             }
             else  // not sure the logic is correct here.  Investigate.
             {
-                MessageBox.Show("You are not not capturing.  There is nothing to stop.","DWMB - Catuion",MessageBoxButton.OK,MessageBoxImage.Warning);
+                MessageBox.Show("You are not capturing.  There is nothing to stop.","DWMB - Caution",MessageBoxButton.OK,MessageBoxImage.Warning);
                 //but since we are still registered, we do not unlock the inputs.
             }
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing);
@@ -384,7 +384,7 @@ namespace DWMB_AIO
                 }
                 catch (Exception ex)
                 {
-                    logger.Log("[CRASH] - An unexpected error occured: " + ex.Message);
+                    logger.Log("[CRASH] - An unexpected error occurred: " + ex.Message);
                     MessageBox.Show("MAYDAY MAYDAY!  Something went wrong when deregistering!!!!", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     return false;
                 }
@@ -434,7 +434,7 @@ namespace DWMB_AIO
 
             device.OnPacketArrival += new SharpPcap.PacketArrivalEventHandler(DWMBClient.OnIncomingFsdPacket);
 
-            // open device for catpuring
+            // open device for capturing
             int readTimeOutMilliseconds = 2000;
             //Timeout of 2000 was set for VATSIM pre-Velocity project (2021).  Now with an update rate of 5hz, we need to be more responsive.  This could explain the gibberish we're seeing before/after real messages in the FSD packets.
 

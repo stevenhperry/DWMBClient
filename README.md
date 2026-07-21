@@ -1,0 +1,99 @@
+# DWMB — Don't Wallop Me Bro
+
+A Windows desktop client for the [VATSIM](https://vatsim.net) flight-simulation
+network that lets you know when someone is trying to reach you — so you don't get
+"walloped" for going unresponsive.
+
+DWMB passively watches your network traffic for FSD private messages and
+on-frequency messages addressed to your callsign, and forwards them to the DWMB
+service, which pings you on Discord. It never sends anything on the network and
+never transmits on your behalf; it only reads and forwards messages meant for you.
+
+## How it works
+
+1. You register your callsign with the DWMB Discord bot and receive a
+   registration code.
+2. You enter your callsign and registration code in the client and click
+   **Start**.
+3. The client captures FSD traffic (TCP port 6809), picks out messages addressed
+   to you, and forwards them to the DWMB server.
+4. The server delivers them to you on Discord.
+5. While registered, the client sends a heartbeat about once a minute so the
+   server knows you're still connected.
+
+## Requirements
+
+- **Windows** (the client is built on WPF / `.NET 9` for Windows).
+- **[.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)**
+  (unless you use a self-contained build).
+- **[Npcap](https://npcap.com/)** — the packet-capture driver (see below).
+- A **DWMB registration code**, obtained from the DWMB Discord bot.
+
+### Npcap / WinPcap
+
+DWMB uses [SharpPcap](https://github.com/dotpcap/sharppcap) for packet capture,
+which needs a libpcap-compatible driver installed on Windows.
+
+- **Npcap is recommended.** The client uses SharpPcap's standard capture API, which
+  works with Npcap. WinPcap is deprecated and unmaintained, and SharpPcap itself
+  recommends Npcap over it.
+- When installing Npcap, enabling **"Install Npcap in WinPcap API-compatible
+  Mode"** is the safest option.
+- If you install Npcap with **"Restrict Npcap driver's access to Administrators
+  only,"** you must run DWMB **as Administrator** for it to see your network
+  adapters.
+
+> **Note:** DWMB was originally written and tested against WinPcap. Npcap
+> compatibility is expected — the code uses SharpPcap's modern, driver-agnostic
+> capture API with no WinPcap-specific calls — and several users have reported it
+> working, but it has not been exhaustively tested by the author. If you hit an
+> issue on Npcap, please open an issue with your Npcap version and install options.
+
+## Setup
+
+1. Install the .NET 9 Desktop Runtime and Npcap (see Requirements).
+2. Register with the DWMB Discord bot to get your registration code.
+3. Make sure a **`server_location.txt`** file sits next to `DWMB.exe`, containing a
+   single line with the DWMB server's base URL (for example, `https://example.com`).
+   The client reads this file at startup to know where to send messages. If it is
+   missing, the client will fail to start.
+
+## Usage
+
+1. Launch DWMB.
+2. Enter your **Callsign** (letters, numbers, underscores, and hyphens only) and
+   your **Registration Code**.
+3. Click **Start** to register and begin forwarding. If prompted, select your
+   network adapter.
+4. The status fields show whether you are **Registered** and **Capturing**.
+5. Click **Pause** to stop forwarding.
+6. Click **Deregister** to stop and disconnect from the bot. If deregistration
+   fails, DM the bot with `remove` to be removed manually.
+
+Your callsign here should match the callsign you connect to the network with.
+
+## Building from source
+
+Requires Windows, the .NET 9 SDK, and Visual Studio 2022 (17.14+) or the
+`dotnet` CLI.
+
+```
+dotnet restore DWMB-AIO.sln
+dotnet build DWMB-AIO.sln -c Release
+```
+
+Remember to place a `server_location.txt` next to the built executable before
+running (it is copied to the output directory on build if present, but is not
+committed to the repository).
+
+## Support
+
+If DWMB is useful to you, you can support development on
+[Ko‑fi](https://ko-fi.com/dontwallopmebro). There's also a QR code and button in
+the app itself.
+
+## Disclaimer
+
+DWMB is a third-party tool and is not affiliated with or endorsed by VATSIM. It
+reads network traffic on your own machine to forward messages addressed to you;
+use it in accordance with VATSIM's rules and your local regulations.
