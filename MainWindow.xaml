@@ -29,7 +29,7 @@
         <!-- Input Fields -->
         <TextBox Name="txtCallsign" Width="100" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,100" Grid.ColumnSpan="2"/>
         <Label Content="Callsign" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,125" Grid.ColumnSpan="2"/>
-        <TextBox Name="txtRegCode" Width="325" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,100" Grid.ColumnSpan="2"/>
+        <PasswordBox Name="txtRegCode" Width="325" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,100" Grid.ColumnSpan="2" ToolTip="Your registration code (masked to reduce shoulder-surfing)."/>
         <Label Content="Registration Code" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,125" Grid.ColumnSpan="2"/>
 
         <!-- Buttons -->

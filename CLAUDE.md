@@ -38,12 +38,16 @@ There is no test project.
 
 ### Runtime requirement: `server_location.txt`
 
-`ApiManager` reads the DWMB server base URL from a `server_location.txt` file at
-startup (`File.ReadAllText("server_location.txt")`). The file is copied to the
-output directory on build (`CopyToOutputDirectory=Always`) but is **git-ignored and
-not committed** — it must exist next to the executable at runtime or the client
-throws on construction. It should contain a single line, the server base URL
-(e.g. `https://example.com`).
+`ApiManager` reads the DWMB server base URL from a `server_location.txt` file when
+the first real `ApiManager` is constructed (on Start), via `LoadServerAddress()`.
+The file is copied to the output directory on build (`CopyToOutputDirectory=Always`)
+but is **git-ignored and not committed** — it must exist next to the executable at
+runtime. It should contain a single line, the server base URL (e.g.
+`https://example.com`). `LoadServerAddress()` trims the value and validates it is a
+well-formed absolute URL; it must be `https://` (plain `http://` is rejected unless
+the host is loopback/localhost). A missing/empty/invalid file raises a
+`DWMBApiException` with an actionable message, surfaced to the user as a dialog on
+Start rather than crashing at launch.
 
 ## Architecture
 

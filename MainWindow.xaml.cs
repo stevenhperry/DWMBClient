@@ -29,7 +29,7 @@ namespace DWMB_AIO
         private void btnStart_Click(object sender, RoutedEventArgs e)
         {
             string callsign = txtCallsign.Text;
-            string regCode = txtRegCode.Text;
+            string regCode = txtRegCode.Password;
 
             try
             {
@@ -78,7 +78,7 @@ namespace DWMB_AIO
             // stopped, but the client is still registered and must be removed server-side.
             DWMBClient.Stop();
 
-            if (DWMBClient.Deregister(this.txtRegCode.Text))
+            if (DWMBClient.Deregister(this.txtRegCode.Password))
             {
                 //success
                 MessageBox.Show("Successfully deregistered and stopped capturing!");
@@ -208,7 +208,8 @@ namespace DWMB_AIO
                 {
                     isInputValid = true; // set but not used.  We avoid the else statement below.
 
-                    logger.Log(String.Format("Client was started with the following arguments: {0} {1}", strCallsignInput, strRegCode));
+                    // Do not write the registration code/token to the log (issue #13).
+                    logger.Log(String.Format("Client was started for callsign {0} (registration code redacted).", strCallsignInput));
 
                     // Build the ApiManager (reads/validates config) before taking the lock,
                     // then publish callsign + am together so the capture thread never sees a

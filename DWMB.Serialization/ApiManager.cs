@@ -90,6 +90,17 @@ namespace DWMB_AIO.DWMB.Serialization
                     $"http(s) URL (found: '{raw}'). Example: https://example.com");
             }
 
+            // Require HTTPS for real servers so forwarded private/on-frequency message
+            // content is not sent in cleartext and cannot be tampered with on-path
+            // (issue #7). Plain http is tolerated only for loopback/dev use.
+            if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
+            {
+                throw new DWMBApiException(
+                    $"Configuration file '{SERVER_LOCATION_FILE}' uses an insecure 'http://' URL " +
+                    $"('{raw}'). Forwarded messages would travel in cleartext. Use 'https://' " +
+                    "(plain http is only permitted for localhost).");
+            }
+
             return raw;
         }
 
