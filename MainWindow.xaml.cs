@@ -172,7 +172,13 @@ namespace DWMB_AIO
 
         // initialize variables
         static string callsign = "";
-        static ApiManager? am = new ApiManager("DummyToken", "DummyCallsign");
+        // Deliberately null until the user clicks Start. Constructing an ApiManager
+        // eagerly here read server_location.txt in a field initializer, so a missing
+        // or malformed config file crashed the app at launch with a cryptic
+        // TypeInitializationException (issue #5). The file is now only read when the
+        // user actually starts, where the error is caught and shown as a friendly
+        // dialog. IsRegistered/Stop already treat a null am as "not registered".
+        static ApiManager? am;
         static Logger logger = new(); // Default log file "log.txt"
         static ICaptureDevice? device; // Define at class level to share across Main and Stop functions
         static FsdMessage? lastMessage;
@@ -234,6 +240,22 @@ namespace DWMB_AIO
                 // Success
                 return (true, null);
             }
+            catch (OperationCanceledException oce)
+            {
+                // User cancelled device selection — not an error, just an abort.
+                logger.Log("[INFO] Start aborted: " + oce.Message);
+                IsCapturing = false;
+                return (false, oce.Message);
+            }
+            catch (DWMBApiException dae)
+            {
+                // Configuration / API problems (e.g. missing or malformed
+                // server_location.txt, no capture device) carry an actionable
+                // message — surface it directly instead of as "Unexpected error".
+                logger.Log("[CONFIG-ERROR] " + dae.Message);
+                IsCapturing = false;
+                return (false, dae.Message);
+            }
             catch (Exception ex)
             {
                 logger.Log("[CRASH] - An unexpected error occurred: " + ex.Message);
@@ -244,19 +266,36 @@ namespace DWMB_AIO
 
         public static void OnIncomingFsdPacket(object sender, PacketCapture e)
         {
+            // This runs on the SharpPcap capture thread. Any exception that escapes
+            // this method is unhandled on a background thread and terminates the
+            // process (issue #6). A single malformed/unexpected packet must never
+            // take the client down, so the entire body is guarded: log and continue.
+            try
+            {
+                ProcessIncomingFsdPacket(e);
+            }
+            catch (Exception ex)
+            {
+                logger.Log("[CAPTURE-ERROR] Failed to process a captured packet (ignored): " + ex);
+            }
+        }
+
+        private static void ProcessIncomingFsdPacket(PacketCapture e)
+        {
             DateTime timestamp = DateTime.UtcNow;
-
-            string pktString = e.Data.ToString();
-
 
             var rawPacket = e.GetPacket();
             var packet = PacketDotNet.Packet.ParsePacket(rawPacket.LinkLayerType, rawPacket.Data);
             var tcpPacket = packet.Extract<PacketDotNet.TcpPacket>();
-            if (tcpPacket != null)
+            if (tcpPacket == null || tcpPacket.PayloadData == null || tcpPacket.PayloadData.Length == 0)
             {
-                pktString = Encoding.UTF8.GetString(tcpPacket.PayloadData);
+                // No TCP payload to parse — nothing to do. (Previously the code fell
+                // through and processed e.Data.ToString(), which is a type name, not
+                // packet data.)
+                return;
             }
 
+            string pktString = Encoding.UTF8.GetString(tcpPacket.PayloadData);
 
             // Split the packet into individual lines
             string[] inputs = pktString.Split(new string[] { "\n" }, StringSplitOptions.None);
@@ -298,12 +337,15 @@ namespace DWMB_AIO
 
                         try
                         {
-                            am.ForwardMessage(input_pm);
+                            am?.ForwardMessage(input_pm);
                             lastMessage = input_pm;
                         }
                         catch (Exception ex)
                         {
-                            // TO DO - log this error.  But logger is not static so we can't access it here.
+                            // logger IS static on DWMBClient, so record the failure here
+                            // instead of dropping it silently. The message was not
+                            // delivered to the server; note the affected message.
+                            logger.Log("[FORWARD-ERROR] Failed to forward message (" + loggingString + "): " + ex.Message);
                         }
 
                     }
@@ -404,32 +446,39 @@ namespace DWMB_AIO
             ConnectionManager cm = new ConnectionManager();
             List<HardwareDevice> connections = cm.Connections;
 
-            // if only one device is found, use it
-            if (connections.Count == 1)
+            if (connections.Count == 0)
             {
+                // No adapter with a local IP was found. Previously this fell into the
+                // Console prompt loop and spun the UI at 100% CPU (issue #4). Fail with
+                // an actionable message instead.
+                logger.Log("[CAPTURE] No suitable network adapter found.");
+                throw new DWMBApiException(
+                    "No suitable network adapter was found. Make sure Npcap (or WinPcap) is installed " +
+                    "and you have an active network connection, then try Start again.");
+            }
+            else if (connections.Count == 1)
+            {
+                // Exactly one candidate — use it without prompting.
                 device = connections[0].Device;
             }
-            // Otherwise, prompt the user for the correct device
-            // TODO: Replace this console prompt with a GUI selection in WPF
             else
             {
-                int i = 0;
-                foreach (HardwareDevice hd in connections)
+                // Multiple candidates — ask the user via a WPF dialog rather than a
+                // Console prompt, which does not work in a windowed app and froze the
+                // UI thread (issue #4).
+                var dialog = new DeviceSelectionWindow(connections)
                 {
-                    Console.WriteLine("[{0}] {1} - {2} - {3}", i, hd.FriendlyName, hd.Description, String.Join(", ", hd.IpAddresses));
-                    i++;
+                    Owner = Application.Current?.MainWindow
+                };
+
+                bool? result = dialog.ShowDialog();
+                if (result != true || dialog.SelectedDevice == null)
+                {
+                    throw new OperationCanceledException(
+                        "Adapter selection was cancelled. The client did not start capturing.");
                 }
 
-                bool parseSuccess = false;
-                int deviceNumber = -1;
-                Console.Write("Select the device to use: ");
-                while (deviceNumber < 0 || deviceNumber >= connections.Count || !parseSuccess)
-                {
-                    string input = Console.ReadLine();
-                    parseSuccess = int.TryParse(input, out deviceNumber);
-                }
-
-                device = connections[deviceNumber].Device;
+                device = dialog.SelectedDevice;
             }
 
             device.OnPacketArrival += new SharpPcap.PacketArrivalEventHandler(DWMBClient.OnIncomingFsdPacket);
