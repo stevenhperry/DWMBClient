@@ -22,6 +22,9 @@ namespace DWMB_AIO
         {
             InitializeComponent();
 
+            // Surface forwarding failures raised on the capture thread (issue #8).
+            DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
+
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
         }
@@ -134,6 +137,57 @@ namespace DWMB_AIO
                 txtStatusCapture.Foreground = new SolidColorBrush(Colors.Black);
                 txtStatusCapture.Background = new SolidColorBrush(Colors.LightYellow);
             }
+
+            // keep the forwarding-health indicator in sync with start/stop transitions
+            UpdateForwardStatus();
+        }
+
+        /// <summary>
+        /// Handles <see cref="DWMBClient.ForwardStatusChanged"/>, which may fire on the
+        /// capture thread — marshal to the UI thread before touching controls (issue #8).
+        /// </summary>
+        private void OnForwardStatusChanged()
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                UpdateForwardStatus();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateForwardStatus));
+            }
+        }
+
+        /// <summary>
+        /// Renders the message-forwarding health: green "OK" while capturing with no
+        /// failures, red "N failed" (with the last error in the tooltip) once any forward
+        /// has failed, and a neutral idle state otherwise.
+        /// </summary>
+        private void UpdateForwardStatus()
+        {
+            var (failures, lastError, lastErrorUtc) = DWMBClient.GetForwardStatus();
+
+            if (failures > 0)
+            {
+                txtStatusForward.Text = string.Format("Forwarding: {0} failed", failures);
+                txtStatusForward.Foreground = new SolidColorBrush(Colors.White);
+                txtStatusForward.Background = new SolidColorBrush(Colors.Firebrick);
+                txtStatusForward.ToolTip = string.Format("Last failure {0:u}: {1}", lastErrorUtc, lastError);
+            }
+            else if (DWMBClient.IsCapturing)
+            {
+                txtStatusForward.Text = "Forwarding: OK";
+                txtStatusForward.Foreground = new SolidColorBrush(Colors.Green);
+                txtStatusForward.Background = new SolidColorBrush(Colors.LightGray);
+                txtStatusForward.ToolTip = "All captured messages have forwarded successfully.";
+            }
+            else
+            {
+                txtStatusForward.Text = "Forwarding: —";
+                txtStatusForward.Foreground = new SolidColorBrush(Colors.Black);
+                txtStatusForward.Background = new SolidColorBrush(Colors.LightYellow);
+                txtStatusForward.ToolTip = "Message-forwarding health (idle).";
+            }
         }
 
         private void LockInputs()
@@ -183,8 +237,65 @@ namespace DWMB_AIO
         // SharpPcap capture thread and mutated on the WPF UI thread (issue #10). Held only
         // briefly to publish or snapshot references — never across network I/O.
         static readonly object stateLock = new object();
+
+        // Precompiled regexes used to strip the inter-packet garbage from each FSD line
+        // and to validate the callsign. Making them static readonly avoids recompiling the
+        // same patterns on every packet on the hot capture path (issue #12).
+        static readonly Regex DollarCleanRegex = new Regex("^.*\\$", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex HashCleanRegex = new Regex("^.*#", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex PercentCleanRegex = new Regex("^.*%", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex AtCleanRegex = new Regex("^.*@", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex CallsignFormatRegex = new Regex(@"^(\d|\w|_|-)+$", RegexOptions.Compiled);
+
         public static bool IsCapturing { get; set; } = false;
         public static bool? IsRegistered => am?.IsRegistered;
+
+        // --- Message-forwarding health tracking (issue #8) ---
+        // Forward failures used to be logged only; a burst (e.g. server unreachable) left
+        // the UI still showing "Capturing: true" while messages were silently dropped.
+        // These aggregate the failures so the UI can surface a visible indicator.
+        static int forwardFailureCount;
+        static string? lastForwardError;
+        static DateTime? lastForwardErrorUtc;
+
+        /// <summary>
+        /// Raised whenever forwarding health changes. May be raised on the capture thread,
+        /// so subscribers must marshal to the UI thread before touching UI.
+        /// </summary>
+        public static event Action? ForwardStatusChanged;
+
+        /// <summary>Returns a consistent snapshot of the current forwarding health.</summary>
+        public static (int Failures, string? LastError, DateTime? LastErrorUtc) GetForwardStatus()
+        {
+            lock (stateLock)
+            {
+                return (forwardFailureCount, lastForwardError, lastForwardErrorUtc);
+            }
+        }
+
+        /// <summary>Clears the failure tally (called when a fresh capture session starts).</summary>
+        private static void ResetForwardStatus()
+        {
+            lock (stateLock)
+            {
+                forwardFailureCount = 0;
+                lastForwardError = null;
+                lastForwardErrorUtc = null;
+            }
+            ForwardStatusChanged?.Invoke();
+        }
+
+        /// <summary>Records a forward failure and notifies subscribers.</summary>
+        private static void RecordForwardFailure(string error)
+        {
+            lock (stateLock)
+            {
+                forwardFailureCount++;
+                lastForwardError = error;
+                lastForwardErrorUtc = DateTime.UtcNow;
+            }
+            ForwardStatusChanged?.Invoke();
+        }
 
 
         /// <summary>
@@ -202,9 +313,8 @@ namespace DWMB_AIO
                 logger.Log("Starting DWMBClient MainApp");
 
                 bool isInputValid = false;
-                Regex callsignFormat = new Regex(@"^(\d|\w|_|-)+$");  //String must be alphanumeric, underscores, or hyphens
 
-                if (callsignFormat.IsMatch(strCallsignInput)) // if valid callsign format
+                if (CallsignFormatRegex.IsMatch(strCallsignInput)) // if valid callsign format (alphanumeric, underscores, or hyphens)
                 {
                     isInputValid = true; // set but not used.  We avoid the else statement below.
 
@@ -331,10 +441,10 @@ namespace DWMB_AIO
             foreach (string line in inputs)
             {
                 // Strip out the garbage that appears in between FSD packets
-                string input = Regex.Replace(line, "^.*\\$", "$", RegexOptions.Multiline);
-                input = Regex.Replace(input, "^.*#", "#", RegexOptions.Multiline);
-                input = Regex.Replace(input, "^.*%", "%", RegexOptions.Multiline);
-                input = Regex.Replace(input, "^.*@", "@", RegexOptions.Multiline);
+                string input = DollarCleanRegex.Replace(line, "$");
+                input = HashCleanRegex.Replace(input, "#");
+                input = PercentCleanRegex.Replace(input, "%");
+                input = AtCleanRegex.Replace(input, "@");
 
                 // Create a FsdPacket object from the cleaned input
                 FsdPacket currPacket = new FsdPacket(timestamp, input);
@@ -384,8 +494,10 @@ namespace DWMB_AIO
                         {
                             // logger IS static on DWMBClient, so record the failure here
                             // instead of dropping it silently. The message was not
-                            // delivered to the server; note the affected message.
+                            // delivered to the server; note the affected message and
+                            // surface it in the UI via the forwarding-health indicator.
                             logger.Log("[FORWARD-ERROR] Failed to forward message (" + loggingString + "): " + ex.Message);
+                            RecordForwardFailure(ex.Message);
                         }
 
                     }
@@ -413,10 +525,17 @@ namespace DWMB_AIO
 
             // on-frequency and private messages addressed to the user...
 
-            // (NOTE: using string.StartsWith() results in partial matches (e.g. UAL1/UAL123), so use regex instead)
-            // Regex: ^{callsign}( |,).*
-            Regex frequencyMessagePattern = new Regex("^" + callsign + @"( |,).*", RegexOptions.IgnoreCase);
-            bool isAddressedToUser = frequencyMessagePattern.IsMatch(msg.Message) ||
+            // On-frequency messages address the user as "{callsign} ..." or "{callsign},...".
+            // We require the character right after the callsign to be a space or comma so we
+            // don't partial-match (e.g. UAL1 vs UAL123). Done with string ops instead of a
+            // per-packet regex compile (issue #12); equivalent to ^{callsign}( |,).*.
+            string message = msg.Message ?? string.Empty;
+            bool startsWithCallsign =
+                message.Length > callsign.Length &&
+                message.StartsWith(callsign, StringComparison.OrdinalIgnoreCase) &&
+                (message[callsign.Length] == ' ' || message[callsign.Length] == ',');
+
+            bool isAddressedToUser = startsWithCallsign ||
                                     string.Equals(msg.Recipient, callsign, StringComparison.OrdinalIgnoreCase);
 
             // self-addressed messages:
@@ -557,6 +676,10 @@ namespace DWMB_AIO
 
             try
             {
+                // Clear any forwarding failures from a previous session so the health
+                // indicator starts fresh for this capture (issue #8).
+                ResetForwardStatus();
+
                 // start non-blocking capture
                 device.StartCapture();
                 IsCapturing = true;

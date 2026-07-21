@@ -71,7 +71,6 @@ organized into folders that map to sub-namespaces:
     forward message, heartbeat, test. Endpoints under `/api/v1/*`.
   - `ApiObjects/` — DTOs (`ForwardedMessage`/`Message`, `ServerRegistrationResponse`,
     `MessageForwardRequest`).
-  - `MessageForwarder` is a legacy/superseded forwarder, not used by the app.
   - `DWMBApiException` — API error type.
 - **`DWMB.Diagnostics`** — `Logger`, a minimal file logger (`log.txt` by default).
 

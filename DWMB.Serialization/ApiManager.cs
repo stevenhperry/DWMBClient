@@ -181,7 +181,8 @@ namespace DWMB_AIO.DWMB.Serialization
         public bool TestConnection()
         {
             RestRequest testRequest = new RestRequest(TEST_ENDPOINT, Method.Get);
-            client.AddDefaultHeader("User-Agent", CLIENT_VERSION);
+            // User-Agent is already set once via RestClientOptions in the constructor.
+            // Calling AddDefaultHeader here accumulated a duplicate header on every call.
             testRequest.OnBeforeDeserialization = resp => { resp.ContentType = "application/json"; };
             var response = client.Execute(testRequest);
             if (response.IsSuccessful)
