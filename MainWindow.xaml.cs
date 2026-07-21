@@ -73,28 +73,24 @@ namespace DWMB_AIO
         private void btnDeregister_Click(object sender, RoutedEventArgs e)
         {
 
-            if (DWMBClient.Stop())
+            // Best-effort stop of any active capture. Deregistration must proceed whether
+            // or not capture is currently running — e.g. after a Pause, capture is already
+            // stopped, but the client is still registered and must be removed server-side.
+            DWMBClient.Stop();
+
+            if (DWMBClient.Deregister(this.txtRegCode.Text))
             {
-                if (DWMBClient.Deregister(this.txtRegCode.Text))
-                {
-                    //success
-                    MessageBox.Show("Successfully deregistered and stopped capturing!");
-                    UnlockInputs();
-                }
-                else
-                {
-                    //failure to deregister
-                    MessageBox.Show("Capture stopped.  However, de-registration failed.\nYou need to DM the bot with 'remove'!!", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                //success
+                MessageBox.Show("Successfully deregistered and stopped capturing!");
+                UnlockInputs();
             }
-            else //Still capturing and did not deregister
+            else
             {
-                MessageBox.Show("Error when deregistering.\nYou need to DM the bot with 'remove'!!", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                //failure to deregister
+                MessageBox.Show("De-registration failed.\nYou need to DM the bot with 'remove'!!", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
 
-
-
-                UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing);
+            UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing);
         }
 
         private void btnTest_Click(object sender, RoutedEventArgs e)
@@ -182,6 +178,11 @@ namespace DWMB_AIO
         static Logger logger = new(); // Default log file "log.txt"
         static ICaptureDevice? device; // Define at class level to share across Main and Stop functions
         static FsdMessage? lastMessage;
+
+        // Guards the shared static state (am, callsign, lastMessage) that is read on the
+        // SharpPcap capture thread and mutated on the WPF UI thread (issue #10). Held only
+        // briefly to publish or snapshot references — never across network I/O.
+        static readonly object stateLock = new object();
         public static bool IsCapturing { get; set; } = false;
         public static bool? IsRegistered => am?.IsRegistered;
 
@@ -206,16 +207,23 @@ namespace DWMB_AIO
                 if (callsignFormat.IsMatch(strCallsignInput)) // if valid callsign format
                 {
                     isInputValid = true; // set but not used.  We avoid the else statement below.
-                    callsign = strCallsignInput;
 
-                    logger.Log(String.Format("Client was started with the following arguments: {0} {1}", callsign, strRegCode));
+                    logger.Log(String.Format("Client was started with the following arguments: {0} {1}", strCallsignInput, strRegCode));
+
+                    // Build the ApiManager (reads/validates config) before taking the lock,
+                    // then publish callsign + am together so the capture thread never sees a
+                    // mismatched (am, callsign) pair (issue #10).
+                    ApiManager newAm = new ApiManager(strRegCode, strCallsignInput);
+                    lock (stateLock)
+                    {
+                        callsign = strCallsignInput;
+                        am = newAm;
+                    }
+
+                    newAm.Register(strRegCode, strCallsignInput);
 
 
-                    am = new ApiManager(strRegCode, callsign);
-                    am.Register(strRegCode, callsign);
-
-
-                    if (!am.IsRegistered)  //if the registration is not successful
+                    if (!newAm.IsRegistered)  //if the registration is not successful
                     {
                         logger.Log("[DWMB_API_ERROR] - Client failed to register with the server.");
                         // Return error instead of showing a MessageBox here so the caller can decide how to present the error.
@@ -297,6 +305,23 @@ namespace DWMB_AIO
 
             string pktString = Encoding.UTF8.GetString(tcpPacket.PayloadData);
 
+            // Take a consistent snapshot of the shared state the UI thread can reassign
+            // (issue #10), so this whole packet is processed against one (am, callsign)
+            // pair even if the user pauses/restarts mid-processing.
+            ApiManager? currentAm;
+            string currentCallsign;
+            lock (stateLock)
+            {
+                currentAm = am;
+                currentCallsign = callsign;
+            }
+
+            // Not started (or already torn down) — nothing to forward to.
+            if (currentAm == null)
+            {
+                return;
+            }
+
             // Split the packet into individual lines
             string[] inputs = pktString.Split(new string[] { "\n" }, StringSplitOptions.None);
             foreach (string line in inputs)
@@ -315,20 +340,27 @@ namespace DWMB_AIO
                 {
                     FsdMessage input_pm = new FsdMessage(timestamp, input);
 
-                    if (IsForwardMessage(input_pm))
+                    if (IsForwardMessage(input_pm, currentCallsign))
                     {
-                        //Check to see if same as last message.  If so, ignore it.
-                        if (lastMessage != null)
+                        // Check to see if same as last message.  If so, ignore it.
+                        bool isDuplicate = false;
+                        lock (stateLock)
                         {
-                            if (string.Equals(lastMessage.Sender, input_pm.Sender, StringComparison.OrdinalIgnoreCase) &&
+                            if (lastMessage != null &&
+                                string.Equals(lastMessage.Sender, input_pm.Sender, StringComparison.OrdinalIgnoreCase) &&
                                 string.Equals(lastMessage.Recipient, input_pm.Recipient, StringComparison.OrdinalIgnoreCase) &&
                                 string.Equals(lastMessage.Message, input_pm.Message, StringComparison.OrdinalIgnoreCase) &&
                                 (input_pm.Timestamp - lastMessage.Timestamp).TotalSeconds < 2) // within 2 seconds
                             {
-                                logger.Log("Duplicate message detected within 2 seconds.  Ignoring.");
-                                continue; // skip processing this duplicate message
+                                isDuplicate = true;
                             }
                         }
+                        if (isDuplicate)
+                        {
+                            logger.Log("Duplicate message detected within 2 seconds.  Ignoring.");
+                            continue; // skip processing this duplicate message
+                        }
+
                         string loggingString = String.Format("{0} > {1} ({2}):\"{3}\" ",
                                                         input_pm.Sender,
                                                         input_pm.Recipient,
@@ -337,8 +369,12 @@ namespace DWMB_AIO
 
                         try
                         {
-                            am?.ForwardMessage(input_pm);
-                            lastMessage = input_pm;
+                            // Forward outside the lock — never hold it across network I/O.
+                            currentAm.ForwardMessage(input_pm);
+                            lock (stateLock)
+                            {
+                                lastMessage = input_pm;
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -358,8 +394,10 @@ namespace DWMB_AIO
         /// Helper method for determining if a FsdMessage should be forwarded.
         /// </summary>
         /// <param name="msg">The FsdMessage in question</param>
+        /// <param name="callsign">The user's callsign to match against (passed in so the
+        /// capture thread uses a consistent snapshot rather than reading the static field).</param>
         /// <returns>True if it should be forwarded, False otherwise</returns>
-        private static bool IsForwardMessage(FsdMessage msg)
+        private static bool IsForwardMessage(FsdMessage msg, string callsign)
         {
             // Under-the-hood ones to SERVER/FP/DATA...
             bool isServerMessage =
@@ -391,9 +429,26 @@ namespace DWMB_AIO
                 {
                     try
                     {
-                        device.StopCapture();
-                        logger.Log("FSD packet capture stopped.");
+                        if (device != null)
+                        {
+                            // Unsubscribe the handler and close the device so a later Start
+                            // re-initializes cleanly instead of double-subscribing / leaking
+                            // the device for the process lifetime (issue #11).
+                            device.OnPacketArrival -= new SharpPcap.PacketArrivalEventHandler(OnIncomingFsdPacket);
+                            device.StopCapture();
+                            device.Close();
+                            device = null;
+                        }
+
+                        am.IsCapturing = false;
                         IsCapturing = false;
+
+                        // Pausing capture should also stop heartbeats, otherwise the server
+                        // keeps treating this (non-capturing) client as online (issue #9).
+                        // Heartbeats resume when the user starts again (re-registration).
+                        am.StopHeartbeat();
+
+                        logger.Log("FSD packet capture stopped.");
                         return true;
                     }
                     catch (Exception ex)
@@ -418,7 +473,8 @@ namespace DWMB_AIO
 
         public static bool Deregister(string strToken)
         {
-            if (am.IsRegistered)
+            // am is null before the first Start (issue #5 change), so null-guard here.
+            if (am != null && am.IsRegistered)
             {
                 try
                 {

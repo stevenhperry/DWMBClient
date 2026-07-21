@@ -96,14 +96,21 @@ organized into folders that map to sub-namespaces:
 - **FSD protocol:** VATSIM FSD runs on TCP port 6809. `#TM<sender>:<recipient>:<message>`
   is a text message; frequency messages address `@xxyyy` (frequency `1xx.yyy`).
 - **`DWMBClient` uses static state** (`callsign`, `am`, `device`, `IsCapturing`).
-  It is constructed with dummy `ApiManager` values on startup, then replaced with
-  real credentials on Start. Be careful editing this shared/static lifecycle.
+  `am` is `null` until the user clicks Start (constructing it early read
+  `server_location.txt` in a field initializer and crashed the app at launch), then
+  it is set to a real `ApiManager` on Start. The shared statics that are touched by
+  both the capture thread and the UI thread (`am`, `callsign`, `lastMessage`) are
+  guarded by `stateLock`; the capture thread snapshots them under the lock and never
+  holds it across network I/O. Be careful editing this shared/static lifecycle.
 - **Version numbers** are set in `DWMB.csproj` (`<Version>`, `<AssemblyVersion>`,
   `<FileVersion>`, `<InformationalVersion>`) and surfaced at runtime via
   `AppInfo.DisplayVersion`, which the UI and `ApiManager` user-agent read.
-- **Known TODOs in the code:** capture can't be restarted once stopped; device
-  selection still uses `Console`-based prompting instead of a WPF dialog; a few
-  error paths lack logging. Search for `TODO` before assuming a rough edge is a bug.
+- **Capture lifecycle:** Stop/Pause unsubscribes the packet handler, closes the
+  device, nulls it, and stops the heartbeat, so a later Start re-initializes cleanly
+  (capture is restartable). Device selection uses a WPF dialog
+  (`DeviceSelectionWindow`) when more than one adapter is present, and fails with a
+  user-facing error when none is found. Search for `TODO` before assuming a rough
+  edge is a bug.
 
 ## Git
 

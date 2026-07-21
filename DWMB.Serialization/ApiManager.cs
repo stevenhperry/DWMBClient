@@ -293,6 +293,13 @@ namespace DWMB_AIO.DWMB.Serialization
             }, null, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS);
         }
 
+        /// <summary>
+        /// Stops periodic heartbeats without deregistering. Used when capture is paused
+        /// so the server stops treating this client as online (issue #9). Heartbeats
+        /// resume automatically the next time the client registers.
+        /// </summary>
+        public void StopHeartbeat() => StopHeartbeatTimer();
+
         private void StopHeartbeatTimer()
         {
             if (heartbeatTimer != null)
