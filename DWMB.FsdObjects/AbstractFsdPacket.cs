@@ -18,7 +18,7 @@
         public abstract string Sender { get; set; }
 
         /// <summary>
-        /// The callsign of the station recieving the packet.
+        /// The callsign of the station receiving the packet.
         /// </summary>
         public abstract string Recipient { get; set; }
     }
