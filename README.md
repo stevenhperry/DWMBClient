@@ -1,99 +1,103 @@
-# DWMB — Don't Wallop Me Bro
+# DWMB — Don't Wallop Me Bro (v2.0)
 
-A Windows desktop client for the [VATSIM](https://vatsim.net) flight-simulation
-network that lets you know when someone is trying to reach you — so you don't get
-"walloped" for going unresponsive.
-
-DWMB passively watches your network traffic for FSD private messages and
+DWMB lets you know when someone is trying to reach you on VATSIM — so you don't
+get "walloped" for going unresponsive. It watches for FSD private messages and
 on-frequency messages addressed to your callsign, and forwards them to the DWMB
-service, which pings you on Discord. It never sends anything on the network and
-never transmits on your behalf; it only reads and forwards messages meant for you.
+service, which pings you on Discord (or Pushover). It never sends anything on the
+network and never transmits on your behalf; it only reads and forwards messages
+meant for you.
 
-## How it works
+**v2.0 is a greenfield rewrite** (see `CLAUDE.md` for the full architecture).
+There are now three ways to capture messages, all sharing the same core logic:
 
-1. You register your callsign with the DWMB Discord bot and receive a
-   registration code.
-2. You enter your callsign and registration code in the client and click
-   **Start**.
-3. The client captures FSD traffic (TCP port 6809), picks out messages addressed
-   to you, and forwards them to the DWMB server.
-4. The server delivers them to you on Discord.
-5. While registered, the client sends a heartbeat about once a minute so the
-   server knows you're still connected.
+* **`DWMB.Plugin.VPilot`** — a vPilot plugin. Recommended if you fly with vPilot:
+  no packet-capture driver needed, and your callsign is auto-detected.
+* **`DWMB.Plugin.XPilot`** — an xPilot plugin. Same benefits, for xPilot users.
+* **`DWMB.Client.Npcap`** — the original standalone WPF app, kept as a fallback
+  for clients without a plugin SDK (e.g. swift). Requires Npcap.
 
-## Requirements
+## Registration
 
-- **Windows** (the client is built on WPF / `.NET 9` for Windows).
-- **[.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)**
-  (unless you use a self-contained build).
-- **[Npcap](https://npcap.com/)** — the packet-capture driver (see below).
-- A **DWMB registration code**, obtained from the DWMB Discord bot.
+All three adapters need a **token**, obtained by logging in with Discord at the
+DWMB server's onboarding page (`https://<your-server>/oauth/discord/login`). That
+page also lets you choose how you're notified (Discord DM or Pushover).
+
+## Setup: vPilot / xPilot plugins
+
+1. Build the plugin project (see "Building from source" — you'll need to supply
+   the third-party plugin SDK DLL yourself; see `DWMB.Plugin.VPilot/lib/README.md`
+   or `DWMB.Plugin.XPilot/lib/README.md`).
+2. Copy the built plugin DLL into your pilot client's Plugins folder (vPilot's
+   `Plugins` folder next to `vPilot.exe`; xPilot's appdata `Plugins` folder).
+3. Next to that DLL, create `dwmb.config.json`:
+   ```json
+   { "server": "https://your-dwmb-server.example.com", "token": "PASTE_FROM_ONBOARDING" }
+   ```
+4. Launch vPilot/xPilot and connect. Your callsign is detected automatically —
+   there's nothing else to enter.
+
+## Setup: npcap fallback
+
+1. Install the [.NET 9 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/9.0)
+   and [Npcap](https://npcap.com/) (see Npcap notes below).
+2. Next to `DWMB.Client.Npcap.exe`, create `dwmb.config.json`:
+   ```json
+   { "server": "https://your-dwmb-server.example.com" }
+   ```
+   (No `token` here — the npcap client, unlike the plugins, still asks for your
+   token in the app itself each session.)
+3. Launch the app, enter your **Callsign** and the **token** from the onboarding
+   page, and click **Start**. If prompted, select your network adapter.
+4. The status fields show whether you are **Registered** and **Capturing**.
+   **Pause** stops forwarding; **Deregister** stops and removes your registration.
 
 ### Npcap / WinPcap
 
-DWMB uses [SharpPcap](https://github.com/dotpcap/sharppcap) for packet capture,
-which needs a libpcap-compatible driver installed on Windows.
+DWMB.Client.Npcap uses [SharpPcap](https://github.com/dotpcap/sharppcap) for
+packet capture, which needs a libpcap-compatible driver.
 
-- **Npcap is recommended.** The client uses SharpPcap's standard capture API, which
-  works with Npcap. WinPcap is deprecated and unmaintained, and SharpPcap itself
-  recommends Npcap over it.
-- When installing Npcap, enabling **"Install Npcap in WinPcap API-compatible
-  Mode"** is the safest option.
+- **Npcap is recommended** (WinPcap is deprecated/unmaintained).
+- Enabling **"Install Npcap in WinPcap API-compatible Mode"** is the safest option.
 - If you install Npcap with **"Restrict Npcap driver's access to Administrators
-  only,"** you must run DWMB **as Administrator** for it to see your network
-  adapters.
-
-> **Note:** DWMB was originally written and tested against WinPcap. Npcap
-> compatibility is expected — the code uses SharpPcap's modern, driver-agnostic
-> capture API with no WinPcap-specific calls — and several users have reported it
-> working, but it has not been exhaustively tested by the author. If you hit an
-> issue on Npcap, please open an issue with your Npcap version and install options.
-
-## Setup
-
-1. Install the .NET 9 Desktop Runtime and Npcap (see Requirements).
-2. Register with the DWMB Discord bot to get your registration code.
-3. Make sure a **`server_location.txt`** file sits next to `DWMB.exe`, containing a
-   single line with the DWMB server's base URL (for example, `https://example.com`).
-   The client reads this file at startup to know where to send messages. If it is
-   missing, the client will fail to start.
-
-## Usage
-
-1. Launch DWMB.
-2. Enter your **Callsign** (letters, numbers, underscores, and hyphens only) and
-   your **Registration Code**.
-3. Click **Start** to register and begin forwarding. If prompted, select your
-   network adapter.
-4. The status fields show whether you are **Registered** and **Capturing**.
-5. Click **Pause** to stop forwarding.
-6. Click **Deregister** to stop and disconnect from the bot. If deregistration
-   fails, DM the bot with `remove` to be removed manually.
-
-Your callsign here should match the callsign you connect to the network with.
+  only,"** you must run the app **as Administrator**.
 
 ## Building from source
 
-Requires Windows, the .NET 9 SDK, and Visual Studio 2022 (17.14+) or the
-`dotnet` CLI.
+Requires Windows, the .NET 9 SDK, and Visual Studio 2022 (17.14+) or the `dotnet`
+CLI. The solution has five projects:
+
+| Project | Target | Notes |
+|---|---|---|
+| `DWMB.Core` | `netstandard2.0` | Shared logic: API client, message filtering, config loading. Referenced by all four projects below. |
+| `DWMB.Core.Tests` | `net9.0` | xUnit tests for `DWMB.Core` — the only project runnable/testable outside Windows. |
+| `DWMB.Plugin.VPilot` | `net48` | vPilot plugin. Needs `RossCarlson.Vatsim.Vpilot.Plugins.dll` in `lib/` — see its README there. |
+| `DWMB.Plugin.XPilot` | `net10.0` | xPilot plugin. Needs `xPilot.PluginSdk.dll` in `lib/` — see its README there. |
+| `DWMB.Client.Npcap` | `net9.0-windows` | The WPF fallback app. |
 
 ```
 dotnet restore DWMB-AIO.sln
 dotnet build DWMB-AIO.sln -c Release
 ```
 
-Remember to place a `server_location.txt` next to the built executable before
+`DWMB.Core.Tests` can be run on any platform:
+
+```
+dotnet test DWMB.Core.Tests/DWMB.Core.Tests.csproj
+```
+
+Remember to place a `dwmb.config.json` next to whichever built output you're
 running (it is copied to the output directory on build if present, but is not
-committed to the repository).
+committed to the repository — see Setup above for its shape per adapter).
 
 ## Support
 
 If DWMB is useful to you, you can support development on
 [Ko‑fi](https://ko-fi.com/dontwallopmebro). There's also a QR code and button in
-the app itself.
+the npcap app itself.
 
 ## Disclaimer
 
 DWMB is a third-party tool and is not affiliated with or endorsed by VATSIM. It
-reads network traffic on your own machine to forward messages addressed to you;
-use it in accordance with VATSIM's rules and your local regulations.
+reads network traffic or plugin events on your own machine to forward messages
+addressed to you; use it in accordance with VATSIM's rules and your local
+regulations.

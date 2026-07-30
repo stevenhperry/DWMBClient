@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Matches xPilot's plugin SDK's own target framework. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DWMB.Plugin.XPilot</RootNamespace>
+    <AssemblyName>DWMB.Plugin.XPilot</AssemblyName>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DWMB.Core\DWMB.Core.csproj" />
+  </ItemGroup>
+
+  <!-- xPilot's plugin SDK (github.com/xpilot-project/plugin-sdk) is not distributed via
+       NuGet -- build it yourself from source, or copy xPilot.PluginSdk.dll out of an
+       xPilot install, and drop the DLL into lib/ before building -- see lib/README.md.
+       Private=false so it isn't copied into the plugin's output folder; xPilot already
+       provides it at runtime (per the SDK's own documented recommendation). -->
+  <ItemGroup>
+    <Reference Include="xPilot.PluginSdk">
+      <HintPath>lib\xPilot.PluginSdk.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

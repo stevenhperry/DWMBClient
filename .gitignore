@@ -1,5 +1,11 @@
 # DWMB Specific gitignore
-server_location.txt
+server_location.txt   # v1 relic; v2 uses dwmb.config.json instead (still git-ignored below)
+dwmb.config.json
+# vendored third-party plugin SDK DLLs (not distributed via NuGet, not ours to commit)
+DWMB.Plugin.VPilot/lib/*.dll
+DWMB.Plugin.VPilot/lib/*.xml
+DWMB.Plugin.XPilot/lib/*.dll
+DWMB.Plugin.XPilot/lib/*.xml
 
 
 
