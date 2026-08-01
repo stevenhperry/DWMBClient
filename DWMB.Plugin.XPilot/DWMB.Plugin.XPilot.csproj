@@ -14,9 +14,11 @@
     <ProjectReference Include="..\DWMB.Core\DWMB.Core.csproj" />
   </ItemGroup>
 
+  <!-- TODO: Get xpilot plugin! -->
+  <!-- https://developer.x-plane.com/article/developing-plugins/ -->
   <!-- xPilot's plugin SDK (github.com/xpilot-project/plugin-sdk) is not distributed via
-       NuGet -- build it yourself from source, or copy xPilot.PluginSdk.dll out of an
-       xPilot install, and drop the DLL into lib/ before building -- see lib/README.md.
+       NuGet - build it yourself from source, or copy xPilot.PluginSdk.dll out of an
+       xPilot install, and drop the DLL into lib/ before building - see lib/README.md.
        Private=false so it isn't copied into the plugin's output folder; xPilot already
        provides it at runtime (per the SDK's own documented recommendation). -->
   <ItemGroup>
