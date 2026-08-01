@@ -38,12 +38,16 @@ There is no test project.
 
 ### Runtime requirement: `server_location.txt`
 
-`ApiManager` reads the DWMB server base URL from a `server_location.txt` file at
-startup (`File.ReadAllText("server_location.txt")`). The file is copied to the
-output directory on build (`CopyToOutputDirectory=Always`) but is **git-ignored and
-not committed** — it must exist next to the executable at runtime or the client
-throws on construction. It should contain a single line, the server base URL
-(e.g. `https://example.com`).
+`ApiManager` reads the DWMB server base URL from a `server_location.txt` file when
+the first real `ApiManager` is constructed (on Start), via `LoadServerAddress()`.
+The file is copied to the output directory on build (`CopyToOutputDirectory=Always`)
+but is **git-ignored and not committed** — it must exist next to the executable at
+runtime. It should contain a single line, the server base URL (e.g.
+`https://example.com`). `LoadServerAddress()` trims the value and validates it is a
+well-formed absolute URL; it must be `https://` (plain `http://` is rejected unless
+the host is loopback/localhost). A missing/empty/invalid file raises a
+`DWMBApiException` with an actionable message, surfaced to the user as a dialog on
+Start rather than crashing at launch.
 
 ## Architecture
 
@@ -67,7 +71,6 @@ organized into folders that map to sub-namespaces:
     forward message, heartbeat, test. Endpoints under `/api/v1/*`.
   - `ApiObjects/` — DTOs (`ForwardedMessage`/`Message`, `ServerRegistrationResponse`,
     `MessageForwardRequest`).
-  - `MessageForwarder` is a legacy/superseded forwarder, not used by the app.
   - `DWMBApiException` — API error type.
 - **`DWMB.Diagnostics`** — `Logger`, a minimal file logger (`log.txt` by default).
 
@@ -96,14 +99,21 @@ organized into folders that map to sub-namespaces:
 - **FSD protocol:** VATSIM FSD runs on TCP port 6809. `#TM<sender>:<recipient>:<message>`
   is a text message; frequency messages address `@xxyyy` (frequency `1xx.yyy`).
 - **`DWMBClient` uses static state** (`callsign`, `am`, `device`, `IsCapturing`).
-  It is constructed with dummy `ApiManager` values on startup, then replaced with
-  real credentials on Start. Be careful editing this shared/static lifecycle.
+  `am` is `null` until the user clicks Start (constructing it early read
+  `server_location.txt` in a field initializer and crashed the app at launch), then
+  it is set to a real `ApiManager` on Start. The shared statics that are touched by
+  both the capture thread and the UI thread (`am`, `callsign`, `lastMessage`) are
+  guarded by `stateLock`; the capture thread snapshots them under the lock and never
+  holds it across network I/O. Be careful editing this shared/static lifecycle.
 - **Version numbers** are set in `DWMB.csproj` (`<Version>`, `<AssemblyVersion>`,
   `<FileVersion>`, `<InformationalVersion>`) and surfaced at runtime via
   `AppInfo.DisplayVersion`, which the UI and `ApiManager` user-agent read.
-- **Known TODOs in the code:** capture can't be restarted once stopped; device
-  selection still uses `Console`-based prompting instead of a WPF dialog; a few
-  error paths lack logging. Search for `TODO` before assuming a rough edge is a bug.
+- **Capture lifecycle:** Stop/Pause unsubscribes the packet handler, closes the
+  device, nulls it, and stops the heartbeat, so a later Start re-initializes cleanly
+  (capture is restartable). Device selection uses a WPF dialog
+  (`DeviceSelectionWindow`) when more than one adapter is present, and fails with a
+  user-facing error when none is found. Search for `TODO` before assuming a rough
+  edge is a bug.
 
 ## Git
 

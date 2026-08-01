@@ -29,6 +29,9 @@
         <!-- Input Fields -->
         <TextBox Name="txtCallsign" Width="100" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,100" Grid.ColumnSpan="2"/>
         <Label Content="Callsign" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,125" Grid.ColumnSpan="2"/>
+        <!-- Registration code is intentionally a plain (unmasked) TextBox: the code is a
+             disposable per-session token already shown to the user in Discord, so masking
+             adds little and hurts usability (issue #13). -->
         <TextBox Name="txtRegCode" Width="325" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,100" Grid.ColumnSpan="2"/>
         <Label Content="Registration Code" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,125" Grid.ColumnSpan="2"/>
 
@@ -44,8 +47,11 @@
 
 
         <!-- Status Box -->
-        <TextBox Name="txtStatusRegister" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="200,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing registration status." FontSize="10" />
-        <TextBox Name="txtStatusCapture" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="-200,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing forwarding status." FontSize="10"/>
+        <TextBox Name="txtStatusRegister" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="300,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing registration status." FontSize="10" />
+        <TextBox Name="txtStatusCapture" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="-300,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing forwarding status." FontSize="10"/>
+        <!-- Message-forwarding health indicator (issue #8): turns red if forwarding to the
+             server fails, so silently-dropped messages don't go unnoticed. -->
+        <TextBox Name="txtStatusForward" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="000,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing message-forwarding health." FontSize="10"/>
 
         <!-- Version box (now pulls from assembly attributes generated from the csproj) -->
         <Label Name="labelVersion" Content="{x:Static local:AppInfo.DisplayVersion}" ContentStringFormat="v {0}" HorizontalAlignment="Left" VerticalAlignment="Bottom" FontSize="8"/>

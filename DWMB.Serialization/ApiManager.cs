@@ -12,7 +12,8 @@ namespace DWMB_AIO.DWMB.Serialization
         // Using AppInfo to get version info
         private readonly string CLIENT_VERSION = $"DWMBClient/{DWMB_AIO.AppInfo.DisplayVersion}";
 
-        private readonly string SERVER_ADDRESS = System.IO.File.ReadAllText("server_location.txt");
+        private const string SERVER_LOCATION_FILE = "server_location.txt";
+        private readonly string SERVER_ADDRESS = LoadServerAddress();
         private readonly string MESSAGE_FORWARDING_ENDPOINT = "/api/v1/messaging";
         private readonly string REGISTRATION_ENDPOINT = "/api/v1/register";
         private readonly string DEREGISTRATION_ENDPOINT = "/api/v1/deregister";
@@ -42,9 +43,65 @@ namespace DWMB_AIO.DWMB.Serialization
                 UserAgent = CLIENT_VERSION
             };
 
-            client = new RestSharp.RestClient(SERVER_ADDRESS);
             client = new RestClient(options);
 
+        }
+
+        /// <summary>
+        /// Reads and validates the DWMB server base URL from <see cref="SERVER_LOCATION_FILE"/>.
+        /// Throws <see cref="DWMBApiException"/> with an actionable message when the file is
+        /// missing, empty, or does not contain a well-formed absolute http(s) URL, so the
+        /// caller can surface a friendly dialog instead of a cryptic crash (issue #5).
+        /// </summary>
+        private static string LoadServerAddress()
+        {
+            if (!System.IO.File.Exists(SERVER_LOCATION_FILE))
+            {
+                throw new DWMBApiException(
+                    $"Configuration file '{SERVER_LOCATION_FILE}' was not found next to the application. " +
+                    "Create it and put your DWMB server URL on a single line (e.g. https://example.com).");
+            }
+
+            string raw;
+            try
+            {
+                // Trim to tolerate a trailing newline/whitespace, which previously
+                // silently corrupted the base URL passed to RestSharp.
+                raw = System.IO.File.ReadAllText(SERVER_LOCATION_FILE).Trim();
+            }
+            catch (Exception ex)
+            {
+                throw new DWMBApiException(
+                    $"Could not read configuration file '{SERVER_LOCATION_FILE}': {ex.Message}", ex);
+            }
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                throw new DWMBApiException(
+                    $"Configuration file '{SERVER_LOCATION_FILE}' is empty. " +
+                    "It must contain the DWMB server URL (e.g. https://example.com).");
+            }
+
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                throw new DWMBApiException(
+                    $"Configuration file '{SERVER_LOCATION_FILE}' does not contain a valid absolute " +
+                    $"http(s) URL (found: '{raw}'). Example: https://example.com");
+            }
+
+            // Require HTTPS for real servers so forwarded private/on-frequency message
+            // content is not sent in cleartext and cannot be tampered with on-path
+            // (issue #7). Plain http is tolerated only for loopback/dev use.
+            if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
+            {
+                throw new DWMBApiException(
+                    $"Configuration file '{SERVER_LOCATION_FILE}' uses an insecure 'http://' URL " +
+                    $"('{raw}'). Forwarded messages would travel in cleartext. Use 'https://' " +
+                    "(plain http is only permitted for localhost).");
+            }
+
+            return raw;
         }
 
 
@@ -124,7 +181,8 @@ namespace DWMB_AIO.DWMB.Serialization
         public bool TestConnection()
         {
             RestRequest testRequest = new RestRequest(TEST_ENDPOINT, Method.Get);
-            client.AddDefaultHeader("User-Agent", CLIENT_VERSION);
+            // User-Agent is already set once via RestClientOptions in the constructor.
+            // Calling AddDefaultHeader here accumulated a duplicate header on every call.
             testRequest.OnBeforeDeserialization = resp => { resp.ContentType = "application/json"; };
             var response = client.Execute(testRequest);
             if (response.IsSuccessful)
@@ -246,6 +304,13 @@ namespace DWMB_AIO.DWMB.Serialization
                 }
             }, null, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS);
         }
+
+        /// <summary>
+        /// Stops periodic heartbeats without deregistering. Used when capture is paused
+        /// so the server stops treating this client as online (issue #9). Heartbeats
+        /// resume automatically the next time the client registers.
+        /// </summary>
+        public void StopHeartbeat() => StopHeartbeatTimer();
 
         private void StopHeartbeatTimer()
         {

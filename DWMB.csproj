@@ -12,10 +12,10 @@
     <StartupObject>DWMB_AIO.App</StartupObject>
 
     <!-- Add these to control versions produced by the build -->
-    <Version>1.0.1.2</Version>                <!-- NuGet / package / product version -->
-    <AssemblyVersion>1.0.1.2</AssemblyVersion> <!-- runtime binding version -->
-    <FileVersion>1.0.1.2</FileVersion>       <!-- file property shown in Explorer -->
-    <InformationalVersion>1.0.1.2</InformationalVersion> <!-- product display (semver+metadata) -->
+    <Version>1.1.0.1</Version>                <!-- NuGet / package / product version -->
+    <AssemblyVersion>1.1.0.1</AssemblyVersion> <!-- runtime binding version -->
+    <FileVersion>1.1.0.1</FileVersion>       <!-- file property shown in Explorer -->
+    <InformationalVersion>1.1.0.1</InformationalVersion> <!-- product display (semver+metadata) -->
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 

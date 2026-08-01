@@ -22,6 +22,9 @@ namespace DWMB_AIO
         {
             InitializeComponent();
 
+            // Surface forwarding failures raised on the capture thread (issue #8).
+            DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
+
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
         }
@@ -73,28 +76,24 @@ namespace DWMB_AIO
         private void btnDeregister_Click(object sender, RoutedEventArgs e)
         {
 
-            if (DWMBClient.Stop())
+            // Best-effort stop of any active capture. Deregistration must proceed whether
+            // or not capture is currently running — e.g. after a Pause, capture is already
+            // stopped, but the client is still registered and must be removed server-side.
+            DWMBClient.Stop();
+
+            if (DWMBClient.Deregister(this.txtRegCode.Text))
             {
-                if (DWMBClient.Deregister(this.txtRegCode.Text))
-                {
-                    //success
-                    MessageBox.Show("Successfully deregistered and stopped capturing!");
-                    UnlockInputs();
-                }
-                else
-                {
-                    //failure to deregister
-                    MessageBox.Show("Capture stopped.  However, de-registration failed.\nYou need to DM the bot with 'remove'!!", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                //success
+                MessageBox.Show("Successfully deregistered and stopped capturing!");
+                UnlockInputs();
             }
-            else //Still capturing and did not deregister
+            else
             {
-                MessageBox.Show("Error when deregistering.\nYou need to DM the bot with 'remove'!!", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                //failure to deregister
+                MessageBox.Show("De-registration failed.\nYou need to DM the bot with 'remove'!!", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
 
-
-
-                UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing);
+            UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing);
         }
 
         private void btnTest_Click(object sender, RoutedEventArgs e)
@@ -138,6 +137,57 @@ namespace DWMB_AIO
                 txtStatusCapture.Foreground = new SolidColorBrush(Colors.Black);
                 txtStatusCapture.Background = new SolidColorBrush(Colors.LightYellow);
             }
+
+            // keep the forwarding-health indicator in sync with start/stop transitions
+            UpdateForwardStatus();
+        }
+
+        /// <summary>
+        /// Handles <see cref="DWMBClient.ForwardStatusChanged"/>, which may fire on the
+        /// capture thread — marshal to the UI thread before touching controls (issue #8).
+        /// </summary>
+        private void OnForwardStatusChanged()
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                UpdateForwardStatus();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateForwardStatus));
+            }
+        }
+
+        /// <summary>
+        /// Renders the message-forwarding health: green "OK" while capturing with no
+        /// failures, red "N failed" (with the last error in the tooltip) once any forward
+        /// has failed, and a neutral idle state otherwise.
+        /// </summary>
+        private void UpdateForwardStatus()
+        {
+            var (failures, lastError, lastErrorUtc) = DWMBClient.GetForwardStatus();
+
+            if (failures > 0)
+            {
+                txtStatusForward.Text = string.Format("Forwarding: {0} failed", failures);
+                txtStatusForward.Foreground = new SolidColorBrush(Colors.White);
+                txtStatusForward.Background = new SolidColorBrush(Colors.Firebrick);
+                txtStatusForward.ToolTip = string.Format("Last failure {0:u}: {1}", lastErrorUtc, lastError);
+            }
+            else if (DWMBClient.IsCapturing)
+            {
+                txtStatusForward.Text = "Forwarding: OK";
+                txtStatusForward.Foreground = new SolidColorBrush(Colors.Green);
+                txtStatusForward.Background = new SolidColorBrush(Colors.LightGray);
+                txtStatusForward.ToolTip = "All captured messages have forwarded successfully.";
+            }
+            else
+            {
+                txtStatusForward.Text = "Forwarding: —";
+                txtStatusForward.Foreground = new SolidColorBrush(Colors.Black);
+                txtStatusForward.Background = new SolidColorBrush(Colors.LightYellow);
+                txtStatusForward.ToolTip = "Message-forwarding health (idle).";
+            }
         }
 
         private void LockInputs()
@@ -172,12 +222,80 @@ namespace DWMB_AIO
 
         // initialize variables
         static string callsign = "";
-        static ApiManager? am = new ApiManager("DummyToken", "DummyCallsign");
+        // Deliberately null until the user clicks Start. Constructing an ApiManager
+        // eagerly here read server_location.txt in a field initializer, so a missing
+        // or malformed config file crashed the app at launch with a cryptic
+        // TypeInitializationException (issue #5). The file is now only read when the
+        // user actually starts, where the error is caught and shown as a friendly
+        // dialog. IsRegistered/Stop already treat a null am as "not registered".
+        static ApiManager? am;
         static Logger logger = new(); // Default log file "log.txt"
         static ICaptureDevice? device; // Define at class level to share across Main and Stop functions
         static FsdMessage? lastMessage;
+
+        // Guards the shared static state (am, callsign, lastMessage) that is read on the
+        // SharpPcap capture thread and mutated on the WPF UI thread (issue #10). Held only
+        // briefly to publish or snapshot references — never across network I/O.
+        static readonly object stateLock = new object();
+
+        // Precompiled regexes used to strip the inter-packet garbage from each FSD line
+        // and to validate the callsign. Making them static readonly avoids recompiling the
+        // same patterns on every packet on the hot capture path (issue #12).
+        static readonly Regex DollarCleanRegex = new Regex("^.*\\$", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex HashCleanRegex = new Regex("^.*#", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex PercentCleanRegex = new Regex("^.*%", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex AtCleanRegex = new Regex("^.*@", RegexOptions.Multiline | RegexOptions.Compiled);
+        static readonly Regex CallsignFormatRegex = new Regex(@"^(\d|\w|_|-)+$", RegexOptions.Compiled);
+
         public static bool IsCapturing { get; set; } = false;
         public static bool? IsRegistered => am?.IsRegistered;
+
+        // --- Message-forwarding health tracking (issue #8) ---
+        // Forward failures used to be logged only; a burst (e.g. server unreachable) left
+        // the UI still showing "Capturing: true" while messages were silently dropped.
+        // These aggregate the failures so the UI can surface a visible indicator.
+        static int forwardFailureCount;
+        static string? lastForwardError;
+        static DateTime? lastForwardErrorUtc;
+
+        /// <summary>
+        /// Raised whenever forwarding health changes. May be raised on the capture thread,
+        /// so subscribers must marshal to the UI thread before touching UI.
+        /// </summary>
+        public static event Action? ForwardStatusChanged;
+
+        /// <summary>Returns a consistent snapshot of the current forwarding health.</summary>
+        public static (int Failures, string? LastError, DateTime? LastErrorUtc) GetForwardStatus()
+        {
+            lock (stateLock)
+            {
+                return (forwardFailureCount, lastForwardError, lastForwardErrorUtc);
+            }
+        }
+
+        /// <summary>Clears the failure tally (called when a fresh capture session starts).</summary>
+        private static void ResetForwardStatus()
+        {
+            lock (stateLock)
+            {
+                forwardFailureCount = 0;
+                lastForwardError = null;
+                lastForwardErrorUtc = null;
+            }
+            ForwardStatusChanged?.Invoke();
+        }
+
+        /// <summary>Records a forward failure and notifies subscribers.</summary>
+        private static void RecordForwardFailure(string error)
+        {
+            lock (stateLock)
+            {
+                forwardFailureCount++;
+                lastForwardError = error;
+                lastForwardErrorUtc = DateTime.UtcNow;
+            }
+            ForwardStatusChanged?.Invoke();
+        }
 
 
         /// <summary>
@@ -195,21 +313,31 @@ namespace DWMB_AIO
                 logger.Log("Starting DWMBClient MainApp");
 
                 bool isInputValid = false;
-                Regex callsignFormat = new Regex(@"^(\d|\w|_|-)+$");  //String must be alphanumeric, underscores, or hyphens
 
-                if (callsignFormat.IsMatch(strCallsignInput)) // if valid callsign format
+                if (CallsignFormatRegex.IsMatch(strCallsignInput)) // if valid callsign format (alphanumeric, underscores, or hyphens)
                 {
                     isInputValid = true; // set but not used.  We avoid the else statement below.
-                    callsign = strCallsignInput;
 
-                    logger.Log(String.Format("Client was started with the following arguments: {0} {1}", callsign, strRegCode));
+                    // The registration code is intentionally logged in plaintext. It is a
+                    // disposable, per-session token (regenerated each session, old ones
+                    // invalidated server-side) and is already shown to the user in Discord,
+                    // so recording it here for troubleshooting is acceptable (issue #13).
+                    logger.Log(String.Format("Client was started with the following arguments: {0} {1}", strCallsignInput, strRegCode));
+
+                    // Build the ApiManager (reads/validates config) before taking the lock,
+                    // then publish callsign + am together so the capture thread never sees a
+                    // mismatched (am, callsign) pair (issue #10).
+                    ApiManager newAm = new ApiManager(strRegCode, strCallsignInput);
+                    lock (stateLock)
+                    {
+                        callsign = strCallsignInput;
+                        am = newAm;
+                    }
+
+                    newAm.Register(strRegCode, strCallsignInput);
 
 
-                    am = new ApiManager(strRegCode, callsign);
-                    am.Register(strRegCode, callsign);
-
-
-                    if (!am.IsRegistered)  //if the registration is not successful
+                    if (!newAm.IsRegistered)  //if the registration is not successful
                     {
                         logger.Log("[DWMB_API_ERROR] - Client failed to register with the server.");
                         // Return error instead of showing a MessageBox here so the caller can decide how to present the error.
@@ -234,6 +362,22 @@ namespace DWMB_AIO
                 // Success
                 return (true, null);
             }
+            catch (OperationCanceledException oce)
+            {
+                // User cancelled device selection — not an error, just an abort.
+                logger.Log("[INFO] Start aborted: " + oce.Message);
+                IsCapturing = false;
+                return (false, oce.Message);
+            }
+            catch (DWMBApiException dae)
+            {
+                // Configuration / API problems (e.g. missing or malformed
+                // server_location.txt, no capture device) carry an actionable
+                // message — surface it directly instead of as "Unexpected error".
+                logger.Log("[CONFIG-ERROR] " + dae.Message);
+                IsCapturing = false;
+                return (false, dae.Message);
+            }
             catch (Exception ex)
             {
                 logger.Log("[CRASH] - An unexpected error occurred: " + ex.Message);
@@ -244,29 +388,63 @@ namespace DWMB_AIO
 
         public static void OnIncomingFsdPacket(object sender, PacketCapture e)
         {
+            // This runs on the SharpPcap capture thread. Any exception that escapes
+            // this method is unhandled on a background thread and terminates the
+            // process (issue #6). A single malformed/unexpected packet must never
+            // take the client down, so the entire body is guarded: log and continue.
+            try
+            {
+                ProcessIncomingFsdPacket(e);
+            }
+            catch (Exception ex)
+            {
+                logger.Log("[CAPTURE-ERROR] Failed to process a captured packet (ignored): " + ex);
+            }
+        }
+
+        private static void ProcessIncomingFsdPacket(PacketCapture e)
+        {
             DateTime timestamp = DateTime.UtcNow;
-
-            string pktString = e.Data.ToString();
-
 
             var rawPacket = e.GetPacket();
             var packet = PacketDotNet.Packet.ParsePacket(rawPacket.LinkLayerType, rawPacket.Data);
             var tcpPacket = packet.Extract<PacketDotNet.TcpPacket>();
-            if (tcpPacket != null)
+            if (tcpPacket == null || tcpPacket.PayloadData == null || tcpPacket.PayloadData.Length == 0)
             {
-                pktString = Encoding.UTF8.GetString(tcpPacket.PayloadData);
+                // No TCP payload to parse — nothing to do. (Previously the code fell
+                // through and processed e.Data.ToString(), which is a type name, not
+                // packet data.)
+                return;
             }
 
+            string pktString = Encoding.UTF8.GetString(tcpPacket.PayloadData);
+
+            // Take a consistent snapshot of the shared state the UI thread can reassign
+            // (issue #10), so this whole packet is processed against one (am, callsign)
+            // pair even if the user pauses/restarts mid-processing.
+            ApiManager? currentAm;
+            string currentCallsign;
+            lock (stateLock)
+            {
+                currentAm = am;
+                currentCallsign = callsign;
+            }
+
+            // Not started (or already torn down) — nothing to forward to.
+            if (currentAm == null)
+            {
+                return;
+            }
 
             // Split the packet into individual lines
             string[] inputs = pktString.Split(new string[] { "\n" }, StringSplitOptions.None);
             foreach (string line in inputs)
             {
                 // Strip out the garbage that appears in between FSD packets
-                string input = Regex.Replace(line, "^.*\\$", "$", RegexOptions.Multiline);
-                input = Regex.Replace(input, "^.*#", "#", RegexOptions.Multiline);
-                input = Regex.Replace(input, "^.*%", "%", RegexOptions.Multiline);
-                input = Regex.Replace(input, "^.*@", "@", RegexOptions.Multiline);
+                string input = DollarCleanRegex.Replace(line, "$");
+                input = HashCleanRegex.Replace(input, "#");
+                input = PercentCleanRegex.Replace(input, "%");
+                input = AtCleanRegex.Replace(input, "@");
 
                 // Create a FsdPacket object from the cleaned input
                 FsdPacket currPacket = new FsdPacket(timestamp, input);
@@ -276,20 +454,27 @@ namespace DWMB_AIO
                 {
                     FsdMessage input_pm = new FsdMessage(timestamp, input);
 
-                    if (IsForwardMessage(input_pm))
+                    if (IsForwardMessage(input_pm, currentCallsign))
                     {
-                        //Check to see if same as last message.  If so, ignore it.
-                        if (lastMessage != null)
+                        // Check to see if same as last message.  If so, ignore it.
+                        bool isDuplicate = false;
+                        lock (stateLock)
                         {
-                            if (string.Equals(lastMessage.Sender, input_pm.Sender, StringComparison.OrdinalIgnoreCase) &&
+                            if (lastMessage != null &&
+                                string.Equals(lastMessage.Sender, input_pm.Sender, StringComparison.OrdinalIgnoreCase) &&
                                 string.Equals(lastMessage.Recipient, input_pm.Recipient, StringComparison.OrdinalIgnoreCase) &&
                                 string.Equals(lastMessage.Message, input_pm.Message, StringComparison.OrdinalIgnoreCase) &&
                                 (input_pm.Timestamp - lastMessage.Timestamp).TotalSeconds < 2) // within 2 seconds
                             {
-                                logger.Log("Duplicate message detected within 2 seconds.  Ignoring.");
-                                continue; // skip processing this duplicate message
+                                isDuplicate = true;
                             }
                         }
+                        if (isDuplicate)
+                        {
+                            logger.Log("Duplicate message detected within 2 seconds.  Ignoring.");
+                            continue; // skip processing this duplicate message
+                        }
+
                         string loggingString = String.Format("{0} > {1} ({2}):\"{3}\" ",
                                                         input_pm.Sender,
                                                         input_pm.Recipient,
@@ -298,12 +483,21 @@ namespace DWMB_AIO
 
                         try
                         {
-                            am.ForwardMessage(input_pm);
-                            lastMessage = input_pm;
+                            // Forward outside the lock — never hold it across network I/O.
+                            currentAm.ForwardMessage(input_pm);
+                            lock (stateLock)
+                            {
+                                lastMessage = input_pm;
+                            }
                         }
                         catch (Exception ex)
                         {
-                            // TO DO - log this error.  But logger is not static so we can't access it here.
+                            // logger IS static on DWMBClient, so record the failure here
+                            // instead of dropping it silently. The message was not
+                            // delivered to the server; note the affected message and
+                            // surface it in the UI via the forwarding-health indicator.
+                            logger.Log("[FORWARD-ERROR] Failed to forward message (" + loggingString + "): " + ex.Message);
+                            RecordForwardFailure(ex.Message);
                         }
 
                     }
@@ -316,8 +510,10 @@ namespace DWMB_AIO
         /// Helper method for determining if a FsdMessage should be forwarded.
         /// </summary>
         /// <param name="msg">The FsdMessage in question</param>
+        /// <param name="callsign">The user's callsign to match against (passed in so the
+        /// capture thread uses a consistent snapshot rather than reading the static field).</param>
         /// <returns>True if it should be forwarded, False otherwise</returns>
-        private static bool IsForwardMessage(FsdMessage msg)
+        private static bool IsForwardMessage(FsdMessage msg, string callsign)
         {
             // Under-the-hood ones to SERVER/FP/DATA...
             bool isServerMessage =
@@ -329,10 +525,17 @@ namespace DWMB_AIO
 
             // on-frequency and private messages addressed to the user...
 
-            // (NOTE: using string.StartsWith() results in partial matches (e.g. UAL1/UAL123), so use regex instead)
-            // Regex: ^{callsign}( |,).*
-            Regex frequencyMessagePattern = new Regex("^" + callsign + @"( |,).*", RegexOptions.IgnoreCase);
-            bool isAddressedToUser = frequencyMessagePattern.IsMatch(msg.Message) ||
+            // On-frequency messages address the user as "{callsign} ..." or "{callsign},...".
+            // We require the character right after the callsign to be a space or comma so we
+            // don't partial-match (e.g. UAL1 vs UAL123). Done with string ops instead of a
+            // per-packet regex compile (issue #12); equivalent to ^{callsign}( |,).*.
+            string message = msg.Message ?? string.Empty;
+            bool startsWithCallsign =
+                message.Length > callsign.Length &&
+                message.StartsWith(callsign, StringComparison.OrdinalIgnoreCase) &&
+                (message[callsign.Length] == ' ' || message[callsign.Length] == ',');
+
+            bool isAddressedToUser = startsWithCallsign ||
                                     string.Equals(msg.Recipient, callsign, StringComparison.OrdinalIgnoreCase);
 
             // self-addressed messages:
@@ -349,9 +552,26 @@ namespace DWMB_AIO
                 {
                     try
                     {
-                        device.StopCapture();
-                        logger.Log("FSD packet capture stopped.");
+                        if (device != null)
+                        {
+                            // Unsubscribe the handler and close the device so a later Start
+                            // re-initializes cleanly instead of double-subscribing / leaking
+                            // the device for the process lifetime (issue #11).
+                            device.OnPacketArrival -= new SharpPcap.PacketArrivalEventHandler(OnIncomingFsdPacket);
+                            device.StopCapture();
+                            device.Close();
+                            device = null;
+                        }
+
+                        am.IsCapturing = false;
                         IsCapturing = false;
+
+                        // Pausing capture should also stop heartbeats, otherwise the server
+                        // keeps treating this (non-capturing) client as online (issue #9).
+                        // Heartbeats resume when the user starts again (re-registration).
+                        am.StopHeartbeat();
+
+                        logger.Log("FSD packet capture stopped.");
                         return true;
                     }
                     catch (Exception ex)
@@ -376,7 +596,8 @@ namespace DWMB_AIO
 
         public static bool Deregister(string strToken)
         {
-            if (am.IsRegistered)
+            // am is null before the first Start (issue #5 change), so null-guard here.
+            if (am != null && am.IsRegistered)
             {
                 try
                 {
@@ -404,32 +625,39 @@ namespace DWMB_AIO
             ConnectionManager cm = new ConnectionManager();
             List<HardwareDevice> connections = cm.Connections;
 
-            // if only one device is found, use it
-            if (connections.Count == 1)
+            if (connections.Count == 0)
             {
+                // No adapter with a local IP was found. Previously this fell into the
+                // Console prompt loop and spun the UI at 100% CPU (issue #4). Fail with
+                // an actionable message instead.
+                logger.Log("[CAPTURE] No suitable network adapter found.");
+                throw new DWMBApiException(
+                    "No suitable network adapter was found. Make sure Npcap (or WinPcap) is installed " +
+                    "and you have an active network connection, then try Start again.");
+            }
+            else if (connections.Count == 1)
+            {
+                // Exactly one candidate — use it without prompting.
                 device = connections[0].Device;
             }
-            // Otherwise, prompt the user for the correct device
-            // TODO: Replace this console prompt with a GUI selection in WPF
             else
             {
-                int i = 0;
-                foreach (HardwareDevice hd in connections)
+                // Multiple candidates — ask the user via a WPF dialog rather than a
+                // Console prompt, which does not work in a windowed app and froze the
+                // UI thread (issue #4).
+                var dialog = new DeviceSelectionWindow(connections)
                 {
-                    Console.WriteLine("[{0}] {1} - {2} - {3}", i, hd.FriendlyName, hd.Description, String.Join(", ", hd.IpAddresses));
-                    i++;
+                    Owner = Application.Current?.MainWindow
+                };
+
+                bool? result = dialog.ShowDialog();
+                if (result != true || dialog.SelectedDevice == null)
+                {
+                    throw new OperationCanceledException(
+                        "Adapter selection was cancelled. The client did not start capturing.");
                 }
 
-                bool parseSuccess = false;
-                int deviceNumber = -1;
-                Console.Write("Select the device to use: ");
-                while (deviceNumber < 0 || deviceNumber >= connections.Count || !parseSuccess)
-                {
-                    string input = Console.ReadLine();
-                    parseSuccess = int.TryParse(input, out deviceNumber);
-                }
-
-                device = connections[deviceNumber].Device;
+                device = dialog.SelectedDevice;
             }
 
             device.OnPacketArrival += new SharpPcap.PacketArrivalEventHandler(DWMBClient.OnIncomingFsdPacket);
@@ -448,6 +676,10 @@ namespace DWMB_AIO
 
             try
             {
+                // Clear any forwarding failures from a previous session so the health
+                // indicator starts fresh for this capture (issue #8).
+                ResetForwardStatus();
+
                 // start non-blocking capture
                 device.StartCapture();
                 IsCapturing = true;
