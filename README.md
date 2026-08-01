@@ -1,4 +1,5 @@
 # DWMB — Don't Wallop Me Bro
+[DontWallopMeBro.com](https://www.dontwallopmebro.com)
 
 A Windows desktop client for the [VATSIM](https://vatsim.net) flight-simulation
 network that lets you know when someone is trying to reach you — so you don't get
@@ -9,6 +10,10 @@ on-frequency messages addressed to your callsign, and forwards them to the DWMB
 service, which pings you on Discord. It never sends anything on the network and
 never transmits on your behalf; it only reads and forwards messages meant for you.
 
+## IMPORTANT - DWMB helps you to comply with the [Vatsim CoC](https://vatsim.net/docs/policy/code-of-conduct) ##
+You **_must_** remain within easy reach of your PC to respond to any ATC or SUP.  Use
+DWMB while doing honey-do items around your home, not while driving to a store.
+
 ## How it works
 
 1. You register your callsign with the DWMB Discord bot and receive a
@@ -17,9 +22,27 @@ never transmits on your behalf; it only reads and forwards messages meant for yo
    **Start**.
 3. The client captures FSD traffic (TCP port 6809), picks out messages addressed
    to you, and forwards them to the DWMB server.
-4. The server delivers them to you on Discord.
+4. The server delivers them to you on Discord, then deletes them from the server.
 5. While registered, the client sends a heartbeat about once a minute so the
    server knows you're still connected.
+
+## Data Handling & Privacy
+
+1. The source code here is published openly so that interested individuals can
+   verify that no additional information is captured, stored, or transmitted.
+2. Other than debugging log files which automatically delete on a rolling basis,
+   DWMB does not retain personally identifiable information about who uses this
+   service or the messages they receive.
+3. Basic & anonymized statistics are recorded.  DWMB records the start & stop
+   dates & times of each session, the number of messages forwarded, and the
+   origin of the message forwarded (e.g. ATC, AutoATC, or SUP).
+4. By being a member of our discord server, your discord ID is visible and you
+   could be tracked via any VATSIM-related discords you are also a member of.
+5. That said, the author has no interest in who uses the service to help them
+   comply with the VATSIM CoC.  The author, who is also a VATSIM Supervisor,
+   is not aware of any actions taken against any VATSIM members for their use
+   of DWMB or its predecessor FCOM.
+
 
 ## Requirements
 
@@ -43,11 +66,9 @@ which needs a libpcap-compatible driver installed on Windows.
   only,"** you must run DWMB **as Administrator** for it to see your network
   adapters.
 
-> **Note:** DWMB was originally written and tested against WinPcap. Npcap
-> compatibility is expected — the code uses SharpPcap's modern, driver-agnostic
-> capture API with no WinPcap-specific calls — and several users have reported it
-> working, but it has not been exhaustively tested by the author. If you hit an
-> issue on Npcap, please open an issue with your Npcap version and install options.
+> **Note:** As of version 1.1, Npcap is the officially supported solution.  No
+> further support of WinPCap will be offered.
+
 
 ## Setup
 
@@ -96,4 +117,4 @@ the app itself.
 
 DWMB is a third-party tool and is not affiliated with or endorsed by VATSIM. It
 reads network traffic on your own machine to forward messages addressed to you;
-use it in accordance with VATSIM's rules and your local regulations.
+use it in accordance with VATSIM's code of conduct.
