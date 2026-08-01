@@ -11,18 +11,14 @@ namespace DWMB.Core.Api
     /// <summary>
     /// Ports v1's ApiManager (DWMB.Serialization/ApiManager.cs): register, forward,
     /// heartbeat, deregister, plus the self-contained ~55s heartbeat timer (so plugin
-    /// shims don't each need to manage one). Fixes two v1 bugs while porting:
-    /// TestConnection() no longer re-adds a duplicate User-Agent header (Register's own
-    /// v1 comment already flagged this as a known duplicate-header bug), and success is
-    /// now determined by HTTP status rather than parsing response body text, matching
-    /// the v2 server's JSON `{"status":"ok"}` responses instead of v1's bare "ok" string.
+    /// shims don't each need to manage one).
     /// </summary>
     public sealed class DwmbApiClient : IDwmbApiClient, IDisposable
     {
-        private const string RegisterEndpoint = "/api/v1/register";
-        private const string MessagingEndpoint = "/api/v1/messaging";
-        private const string HeartbeatEndpoint = "/api/v1/heartbeat";
-        private const string DeregisterEndpoint = "/api/v1/deregister";
+        private const string RegisterEndpoint = "/api/v2/register";
+        private const string MessagingEndpoint = "/api/v2/messaging";
+        private const string HeartbeatEndpoint = "/api/v2/heartbeat";
+        private const string DeregisterEndpoint = "/api/v2/deregister";
         private const string StatusEndpoint = "/status";
 
         private const int HeartbeatIntervalMs = 55_000; // matches server's staleness grace window

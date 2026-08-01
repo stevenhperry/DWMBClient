@@ -2,7 +2,7 @@ using System;
 
 namespace DWMB.Core.Api
 {
-    /// <summary>Errors from DWMB API operations. Ported from v1's DWMBApiException, made public.</summary>
+    /// <summary>Errors from DWMB API operations.</summary>
     public class DwmbApiException : Exception
     {
         public DwmbApiException() { }

@@ -22,9 +22,7 @@ namespace DWMB.Core
 
             // NOTE: string.StartsWith() would give partial matches (e.g. UAL1 matching
             // inside UAL123), so this uses a regex anchored at the start instead.
-            // Regex.Escape guards against a callsign containing regex metacharacters --
-            // v1 interpolated the callsign unescaped, harmless there only because its
-            // callsign-input validation regex admits no metacharacters.
+            // Regex.Escape guards against a callsign containing regex metacharacters
             var addressedPattern = new Regex("^" + Regex.Escape(callsign) + @"( |,).*", RegexOptions.IgnoreCase);
             bool isAddressedToUser = addressedPattern.IsMatch(message) ||
                                      string.Equals(receiver, callsign, StringComparison.OrdinalIgnoreCase);

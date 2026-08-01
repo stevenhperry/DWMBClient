@@ -15,12 +15,6 @@
     <ProjectReference Include="..\DWMB.Core\DWMB.Core.csproj" />
   </ItemGroup>
 
-  <!-- vPilot has no NuGet-distributed plugin SDK -- real vPilot plugins (e.g.
-       github.com/blt950/vPilot-Pushover) vendor a copy of
-       RossCarlson.Vatsim.Vpilot.Plugins.dll (found in the vPilot install folder)
-       directly into the plugin project. Drop that DLL (and its .xml doc, optional)
-       into lib/ before building -- see lib/README.md. Private=false so it isn't
-       copied into the plugin's output folder; vPilot already provides it at runtime. -->
   <ItemGroup>
     <Reference Include="RossCarlson.Vatsim.Vpilot.Plugins">
       <HintPath>lib\RossCarlson.Vatsim.Vpilot.Plugins.dll</HintPath>
