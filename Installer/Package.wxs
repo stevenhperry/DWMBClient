@@ -49,7 +49,10 @@
           than shipped as a loose file. DWMB.exe is authored explicitly above so its
           Shortcuts/KeyPath are under our control.
         -->
-        <Files Include="$(var.AppPublishDir)**" Exclude="**\DWMB.exe;**\*.pdb" />
+        <Files Include="$(var.AppPublishDir)**">
+          <Exclude Path="$(var.AppPublishDir)DWMB.exe" />
+          <Exclude Path="$(var.AppPublishDir)**\*.pdb" />
+        </Files>
 
       </Directory>
     </StandardDirectory>
