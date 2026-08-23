@@ -44,16 +44,18 @@ There is no test project.
 `dotnet build Installer\DWMB.Installer.wixproj -c Release`; see
 `Installer/README.md` for details. `.github/workflows/installer.yml` builds it in
 CI (`windows-latest`) and uploads the `.msi` as a workflow artifact.
-`server_location.txt` is never bundled into the MSI, same as the normal build.
+`server_location.txt` is bundled into the MSI (see below), so installs work
+with no manual setup step.
 
 ### Runtime requirement: `server_location.txt`
 
 `ApiManager` reads the DWMB server base URL from a `server_location.txt` file when
 the first real `ApiManager` is constructed (on Start), via `LoadServerAddress()`.
 The file is copied to the output directory on build (`CopyToOutputDirectory=Always`)
-but is **git-ignored and not committed** — it must exist next to the executable at
-runtime. It should contain a single line, the server base URL (e.g.
-`https://example.com`). `LoadServerAddress()` trims the value and validates it is a
+and is **committed at the repo root** — it must exist next to the executable at
+runtime, and both `dotnet build`/`publish` and the MSI installer carry it along
+automatically. It contains a single line, the server base URL.
+`LoadServerAddress()` trims the value and validates it is a
 well-formed absolute URL; it must be `https://` (plain `http://` is rejected unless
 the host is loopback/localhost). A missing/empty/invalid file raises a
 `DWMBApiException` with an actionable message, surfaced to the user as a dialog on
@@ -127,5 +129,7 @@ organized into folders that map to sub-namespaces:
 
 ## Git
 
-- Do not commit `server_location.txt`, `log.txt`, or build output (all git-ignored).
+- `server_location.txt` is committed at the repo root and contains a real server
+  URL — keep that in mind before making the repo public if it isn't already.
+- Do not commit `log.txt` or build output (all git-ignored).
 - Commit or push only when explicitly asked.

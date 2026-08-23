@@ -74,10 +74,12 @@ which needs a libpcap-compatible driver installed on Windows.
 
 1. Install the .NET 9 Desktop Runtime and Npcap (see Requirements).
 2. Register with the DWMB Discord bot to get your registration code.
-3. Make sure a **`server_location.txt`** file sits next to `DWMB.exe`, containing a
-   single line with the DWMB server's base URL (for example, `https://example.com`).
-   The client reads this file at startup to know where to send messages. If it is
-   missing, the client will fail to start.
+3. A **`server_location.txt`** file must sit next to `DWMB.exe`, containing a
+   single line with the DWMB server's base URL. The client reads this file at
+   startup to know where to send messages, and will fail to start if it's
+   missing. The MSI installer ships this file for you; if you built from
+   source, it's copied to the output directory automatically since it's
+   committed at the repo root.
 
 ## Usage
 
@@ -103,9 +105,8 @@ dotnet restore DWMB-AIO.sln
 dotnet build DWMB-AIO.sln -c Release
 ```
 
-Remember to place a `server_location.txt` next to the built executable before
-running (it is copied to the output directory on build if present, but is not
-committed to the repository).
+`server_location.txt` is committed at the repo root and is copied next to the
+built executable automatically.
 
 ### Building the MSI installer
 

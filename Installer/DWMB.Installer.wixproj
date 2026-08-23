@@ -8,7 +8,6 @@
 
     <!-- Where the self-contained, published DWMB.exe (and friends) land before harvesting -->
     <AppPublishDir>$(MSBuildThisFileDirectory)bin\publish\win-x64\</AppPublishDir>
-    <ServerLocationFile>$(MSBuildThisFileDirectory)..\server_location.txt</ServerLocationFile>
 
     <!-- Exposed to Package.wxs as $(var.RepoRoot) / $(var.AppPublishDir) -->
     <DefineConstants>RepoRoot=$(MSBuildThisFileDirectory)..\;AppPublishDir=$(AppPublishDir)</DefineConstants>
@@ -17,16 +16,6 @@
   <ItemGroup>
     <PackageReference Include="WixToolset.UI.wixext" Version="7.0.0" />
   </ItemGroup>
-
-  <!--
-    server_location.txt is git-ignored (see CLAUDE.md / README) and is never bundled into the
-    MSI. dotnet publish still needs *something* on disk for the Content item in DWMB.csproj to
-    copy, so drop a harmless placeholder if the file isn't already present locally. Package.wxs
-    explicitly excludes server_location.txt from the harvested files either way.
-  -->
-  <Target Name="EnsureServerLocationPlaceholder" BeforeTargets="PublishApp">
-    <WriteLinesToFile File="$(ServerLocationFile)" Lines="https://example.com" Overwrite="false" Condition="!Exists('$(ServerLocationFile)')" />
-  </Target>
 
   <!--
     Publish the WPF app (self-contained win-x64) before WiX compiles Package.wxs. The <Files>
