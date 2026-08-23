@@ -21,6 +21,22 @@
       regardless of what (if any) global `wix` CLI tool version is on PATH.
     -->
     <AcceptEula>wix7</AcceptEula>
+
+    <!--
+      ICE38/ICE64 fire on every auto-harvested file component in the <Files> glob in
+      Package.wxs (one component per published file), because per-user components
+      (Scope="perUser", PerUserProgramFilesFolder) are required to be keyed on an HKCU
+      registry value rather than a file, and per-user directories need explicit
+      RemoveFile tracking. WiX's bulk <Files> harvesting has no option to generate
+      either automatically — this is an acknowledged, currently-unresolved gap in the
+      toolset itself (wixtoolset/issues#8633, "Generated components should be ICE-clean
+      for per-user target directories"), not a mistake in this authoring. Hand-authoring
+      a registry KeyPath per harvested file isn't practical for a 100+-file self-contained
+      publish output, and DWMB installs/removes as one atomic unit with no per-file repair
+      scenario these ICEs would actually protect against, so suppressing them here is the
+      standard, documented workaround rather than a correctness compromise.
+    -->
+    <SuppressIces>ICE38;ICE64</SuppressIces>
   </PropertyGroup>
 
   <ItemGroup>

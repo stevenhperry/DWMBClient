@@ -61,6 +61,17 @@ don't have a Windows machine handy.
   right tradeoff for a single-user desktop tool like this one; the alternative
   (`Scope="perMachine"`, `ProgramFiles64Folder`) requires UAC elevation to
   install at all.
+- `DWMB.Installer.wixproj` sets `<SuppressIces>ICE38;ICE64</SuppressIces>`.
+  Per-user scope means every auto-harvested file component from the `<Files>`
+  glob in `Package.wxs` (one per published file — 100+ of them) needs to be
+  keyed on an HKCU registry value instead of a file, and per-user directories
+  need explicit removal tracking — bulk `<Files>` harvesting has no option to
+  generate either automatically. This is a currently-open gap in WiX itself
+  ([wixtoolset/issues#8633](https://github.com/wixtoolset/issues/issues/8633)),
+  not an authoring mistake; hand-authoring a registry KeyPath per harvested
+  file isn't practical at this scale, and DWMB installs/removes as one atomic
+  unit with no per-file repair scenario these ICEs would actually protect
+  against, so suppressing them is the standard workaround.
 - The license/notice page shown during setup (`License.rtf`) isn't a legal
   license — there isn't one for this project — it's a short heads-up about
   the VATSIM CoC and the Npcap requirement.

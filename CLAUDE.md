@@ -48,7 +48,13 @@ per-user (`Package/@Scope="perUser"` in `Package.wxs`, installing under
 `%LOCALAPPDATA%\Programs\DontWallopMeBro` via `StandardDirectory
 Id="PerUserProgramFilesFolder"`) rather than per-machine, so running the installer
 itself needs no UAC elevation — separate from Npcap possibly needing an elevated
-*app* process at runtime (see Admin-restricted Npcap below). The server URL
+*app* process at runtime (see Admin-restricted Npcap below). Per-user scope means
+every auto-harvested component from the `<Files>` glob in `Package.wxs` (one per
+published file) needs an HKCU-registry KeyPath rather than a file, which bulk
+harvesting can't generate — an open WiX gap
+([wixtoolset/issues#8633](https://github.com/wixtoolset/issues/issues/8633)), not
+an authoring mistake — so the wixproj sets `<SuppressIces>ICE38;ICE64</SuppressIces>`
+rather than hand-authoring a registry KeyPath for 100+ files. The server URL
 is compiled into `DWMB.exe` (see below), so installs work with no manual setup step.
 
 ### Server URL: compiled-in, not a loose file
