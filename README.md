@@ -69,6 +69,11 @@ which needs a libpcap-compatible driver installed on Windows.
 > **Note:** As of version 1.1, Npcap is the officially supported solution.  No
 > further support of WinPCap will be offered.
 
+Note this Administrator requirement is about *running DWMB* when Npcap's driver
+access is restricted — it's unrelated to installing DWMB itself. The DWMB
+installer installs per-user (no admin/UAC prompt); Npcap's own installer is
+separate and does need admin, since it installs a kernel driver.
+
 DWMB checks for a working capture driver at startup; if none is found, it shows
 a dialog explaining that Npcap is missing, with a link to the download page and
 the steps above. The app still opens either way — you just won't be able to

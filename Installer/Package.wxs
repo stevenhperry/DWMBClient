@@ -8,7 +8,8 @@
            UpgradeCode="4E34DE7B-C9B2-4FCB-99C0-30FF763C9652"
            Language="1033"
            Compressed="yes"
-           InstallerVersion="500">
+           InstallerVersion="500"
+           Scope="perUser">
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit." />
     <MediaTemplate EmbedCab="yes" />
@@ -19,7 +20,14 @@
     <Property Id="ARPHELPLINK" Value="https://www.dontwallopmebro.com" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
-    <StandardDirectory Id="ProgramFiles64Folder">
+    <!--
+      Per-user install (Scope="perUser" above): DWMB installs under the current user's
+      profile (%LOCALAPPDATA%\Programs\DontWallopMeBro) rather than Program Files, so
+      the MSI runs without a UAC elevation prompt. This is unrelated to Npcap possibly
+      needing an elevated DWMB.exe at runtime (see PcapDriverCheck.IsRunningElevated in
+      MainWindow.xaml.cs) — that's a separate, driver-configuration-dependent concern.
+    -->
+    <StandardDirectory Id="PerUserProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="DontWallopMeBro">
 
         <Component Id="MainExecutableComponent" Guid="3C39567B-EA30-4F7D-A09C-F274FC28B02D">
@@ -29,10 +37,9 @@
 
         <!--
           Shortcuts live in their own component, keyed on an HKCU registry value rather
-          than the (per-machine, Program Files) exe file: mixing a per-machine KeyPath
-          with per-user shortcut locations (Desktop/Start Menu) in one component fails
-          MSI validation (ICE43/ICE57) — Windows Installer wants per-user data tracked
-          under its own per-user KeyPath, separate from the per-machine file install.
+          than the exe file, to satisfy MSI validation (ICE43/ICE57), which wants a
+          non-advertised shortcut's component keyed on a per-user registry value rather
+          than a file KeyPath.
         -->
         <Component Id="ApplicationShortcuts" Guid="A63D7778-B41C-4EDB-ACAE-5CBA344356A9">
           <Shortcut Id="StartMenuShortcut"

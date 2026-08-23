@@ -7,7 +7,12 @@ using the [WiX Toolset](https://wixtoolset.org/) v7 SDK-style project format.
 
 1. `dotnet publish`-es `../DWMB.csproj` as a **self-contained, win-x64** build
    (so end users don't need the .NET 9 Desktop Runtime installed separately).
-2. Harvests the published output into `Program Files\DontWallopMeBro\`.
+2. Harvests the published output into `%LOCALAPPDATA%\Programs\DontWallopMeBro\`.
+   `Package.wxs` sets `Scope="perUser"`, so the MSI installs under the current
+   user's profile instead of Program Files — no UAC elevation prompt to run
+   the installer. (Unrelated: Npcap itself may still require running the
+   *installed app* elevated, depending on how the driver was configured —
+   see the Npcap section in the main `README.md`.)
 3. Adds Start Menu and Desktop shortcuts to `DWMB.exe`.
 4. Produces `DWMB-AIO-Client-Setup.msi`, versioned to match `DWMB.exe`'s file
    version (i.e. whatever `<FileVersion>` is set to in `DWMB.csproj`).
@@ -50,6 +55,12 @@ don't have a Windows machine handy.
   stop detecting/replacing prior installs.
 - The installer targets `win-x64` only, matching `DWMB.csproj`'s
   `<PlatformTarget>x64</PlatformTarget>`.
+- Per-user scope (`Scope="perUser"`, `StandardDirectory Id="PerUserProgramFilesFolder"`)
+  means the app installs only for the account that ran the installer, not
+  machine-wide — a different Windows account needs its own install. That's the
+  right tradeoff for a single-user desktop tool like this one; the alternative
+  (`Scope="perMachine"`, `ProgramFiles64Folder`) requires UAC elevation to
+  install at all.
 - The license/notice page shown during setup (`License.rtf`) isn't a legal
   license — there isn't one for this project — it's a short heads-up about
   the VATSIM CoC and the Npcap requirement.

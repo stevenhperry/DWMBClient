@@ -43,7 +43,12 @@ There is no test project.
 (`win-x64`) and packages it as `DWMB-AIO-Client-Setup.msi`. Build it with
 `dotnet build Installer\DWMB.Installer.wixproj -c Release`; see
 `Installer/README.md` for details. `.github/workflows/installer.yml` builds it in
-CI (`windows-latest`) and uploads the `.msi` as a workflow artifact. The server URL
+CI (`windows-latest`) and uploads the `.msi` as a workflow artifact. The install is
+per-user (`Package/@Scope="perUser"` in `Package.wxs`, installing under
+`%LOCALAPPDATA%\Programs\DontWallopMeBro` via `StandardDirectory
+Id="PerUserProgramFilesFolder"`) rather than per-machine, so running the installer
+itself needs no UAC elevation — separate from Npcap possibly needing an elevated
+*app* process at runtime (see Admin-restricted Npcap below). The server URL
 is compiled into `DWMB.exe` (see below), so installs work with no manual setup step.
 
 ### Server URL: compiled-in, not a loose file
@@ -103,7 +108,10 @@ organized into folders that map to sub-namespaces:
 - **`DWMB.Diagnostics`** — `Logger`, a minimal file logger. Defaults to
   `%LOCALAPPDATA%\DontWallopMeBro\log.txt` — the exe installs to Program Files,
   which a standard user can't write to, so the log can't live next to it or in
-  the process's working directory.
+  the process's working directory. (The MSI install is now per-user, under
+  `%LOCALAPPDATA%\Programs\...` — see MSI installer above — so that folder
+  happens to be writable too, but logs stay in their own `%LOCALAPPDATA%`
+  location regardless, kept separate from the app's own program files.)
 
 ### Runtime flow
 
