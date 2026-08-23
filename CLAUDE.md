@@ -129,7 +129,10 @@ organized into folders that map to sub-namespaces:
 
 ## Git
 
-- `server_location.txt` is committed at the repo root and contains a real server
-  URL — keep that in mind before making the repo public if it isn't already.
+- `server_location.txt` is committed at the repo root with a **placeholder**
+  value (`https://example.com`), not the real production URL — this repo is
+  public, and the real URL was briefly committed and then removed from
+  history (reset + force-push) once that was noticed. Do not commit the real
+  server URL here; set it locally/out of band before cutting a release.
 - Do not commit `log.txt` or build output (all git-ignored).
 - Commit or push only when explicitly asked.

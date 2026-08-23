@@ -15,7 +15,8 @@ using the [WiX Toolset](https://wixtoolset.org/) v7 SDK-style project format.
 `server_location.txt` is bundled into the MSI — it's committed at the repo
 root (`../server_location.txt`) and gets published/harvested like any other
 output file, so installed clients work out of the box with no manual setup
-step.
+step. The committed copy holds a **placeholder** (`https://example.com`),
+not a real server address — see Notes below.
 
 ## Building
 
@@ -41,7 +42,7 @@ don't have a Windows machine handy.
 - The license/notice page shown during setup (`License.rtf`) isn't a legal
   license — there isn't one for this project — it's a short heads-up about
   the VATSIM CoC and the Npcap requirement.
-- Committing `server_location.txt` means the repo's copy points at a real
-  server. Keep that in mind before making the repo public if it isn't
-  already, and update it there (not just locally) if the server address
-  ever changes.
+- The committed `server_location.txt` is a placeholder (`https://example.com`)
+  on purpose — this repo is public, so don't commit the real production URL
+  here. Point it at the real server locally (uncommitted) before building a
+  release you intend to actually distribute.
