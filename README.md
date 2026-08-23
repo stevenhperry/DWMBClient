@@ -69,6 +69,11 @@ which needs a libpcap-compatible driver installed on Windows.
 > **Note:** As of version 1.1, Npcap is the officially supported solution.  No
 > further support of WinPCap will be offered.
 
+DWMB checks for a working capture driver at startup; if none is found, it shows
+a dialog explaining that Npcap is missing, with a link to the download page and
+the steps above. The app still opens either way — you just won't be able to
+**Start** until a driver is installed and DWMB is restarted.
+
 
 ## Setup
 

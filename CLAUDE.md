@@ -140,8 +140,20 @@ organized into folders that map to sub-namespaces:
   device, nulls it, and stops the heartbeat, so a later Start re-initializes cleanly
   (capture is restartable). Device selection uses a WPF dialog
   (`DeviceSelectionWindow`) when more than one adapter is present, and fails with a
-  user-facing error when none is found. Search for `TODO` before assuming a rough
-  edge is a bug.
+  user-facing error when none is found.
+- **Npcap check:** `MainWindow`'s constructor calls `CheckNpcapInstalled()`, which
+  uses `DWMB.FsdDetection.PcapDriverCheck.IsAvailable()` to probe for a working
+  capture driver (via `SharpPcap.CaptureDeviceList.Instance` — SharpPcap has no
+  dedicated "is Npcap installed" API, so this is the same call enumeration itself
+  needs, and it throws `DllNotFoundException` when the native `wpcap.dll` isn't
+  found). If it fails, a dialog explains why and offers to open the Npcap download
+  page (`PcapDriverCheck.DownloadUrl`); the window still opens either way. The same
+  `PcapDriverCheck.BuildMissingDriverMessage()` text is reused in `MainApp`'s
+  `DllNotFoundException` catch block, so hitting the same failure at Start time
+  (driver removed mid-session, or the startup dialog was dismissed) gives the same
+  actionable message instead of a raw "Unable to load DLL 'wpcap'" error.
+
+Search for `TODO` before assuming a rough edge is a bug.
 
 ## Git
 

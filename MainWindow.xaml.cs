@@ -22,11 +22,47 @@ namespace DWMB_AIO
         {
             InitializeComponent();
 
+            CheckNpcapInstalled();
+
             // Surface forwarding failures raised on the capture thread (issue #8).
             DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
 
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
+        }
+
+        /// <summary>
+        /// Warns the user at startup if no capture driver (Npcap) is found, with
+        /// instructions to install it, instead of only failing later when they click
+        /// Start. Non-blocking beyond the dialog itself — the window still opens either
+        /// way, since the user may just want to look around or deregister.
+        /// </summary>
+        private void CheckNpcapInstalled()
+        {
+            if (PcapDriverCheck.IsAvailable(out string? errorDetail))
+            {
+                return;
+            }
+
+            new Logger().Log("[STARTUP] Npcap/WinPcap driver not found: " + errorDetail);
+
+            var result = MessageBox.Show(
+                PcapDriverCheck.BuildMissingDriverMessage(errorDetail) + "\n\nOpen the Npcap download page now?",
+                "DWMB - Npcap Not Found",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(PcapDriverCheck.DownloadUrl) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Unable to open link: {ex.Message}", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
         }
 
         private void btnStart_Click(object sender, RoutedEventArgs e)
@@ -385,6 +421,16 @@ namespace DWMB_AIO
                 logger.Log("[CONFIG-ERROR] " + dae.Message);
                 IsCapturing = false;
                 return (false, dae.Message);
+            }
+            catch (DllNotFoundException dnfe)
+            {
+                // Same failure the startup Npcap check watches for, just hit here
+                // instead (e.g. the check was dismissed, or the driver was removed
+                // mid-session). Give the same install instructions rather than a raw
+                // "Unable to load DLL 'wpcap'" message.
+                logger.Log("[CONFIG-ERROR] Npcap/WinPcap driver not found: " + dnfe.Message);
+                IsCapturing = false;
+                return (false, PcapDriverCheck.BuildMissingDriverMessage(dnfe.Message));
             }
             catch (Exception ex)
             {
