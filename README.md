@@ -74,6 +74,10 @@ a dialog explaining that Npcap is missing, with a link to the download page and
 the steps above. The app still opens either way — you just won't be able to
 **Start** until a driver is installed and DWMB is restarted.
 
+If Npcap is installed but restricted to Administrators (see above) and DWMB
+isn't running elevated, **Start** will find zero network adapters — the
+resulting error mentions trying "Run as Administrator" as the likely fix.
+
 
 ## Setup
 

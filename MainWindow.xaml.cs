@@ -685,9 +685,22 @@ namespace DWMB_AIO
                 // Console prompt loop and spun the UI at 100% CPU (issue #4). Fail with
                 // an actionable message instead.
                 logger.Log("[CAPTURE] No suitable network adapter found.");
-                throw new DWMBApiException(
+
+                string message =
                     "No suitable network adapter was found. Make sure Npcap (or WinPcap) is installed " +
-                    "and you have an active network connection, then try Start again.");
+                    "and you have an active network connection, then try Start again.";
+
+                // Npcap installed with "Restrict driver's access to Administrators only"
+                // hides every adapter from a non-elevated process instead of erroring, so
+                // this looks identical to "no driver"/"no network" unless we call it out.
+                if (!PcapDriverCheck.IsRunningElevated())
+                {
+                    message +=
+                        "\n\nIf Npcap was installed with \"Restrict Npcap driver's access to " +
+                        "Administrators only,\" try running DWMB as Administrator.";
+                }
+
+                throw new DWMBApiException(message);
             }
             else if (connections.Count == 1)
             {

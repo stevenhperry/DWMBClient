@@ -152,6 +152,14 @@ organized into folders that map to sub-namespaces:
   `DllNotFoundException` catch block, so hitting the same failure at Start time
   (driver removed mid-session, or the startup dialog was dismissed) gives the same
   actionable message instead of a raw "Unable to load DLL 'wpcap'" error.
+- **Admin-restricted Npcap:** Npcap installed with "Restrict driver's access to
+  Administrators only" makes the driver load fine but hides every adapter from a
+  non-elevated process — `PcapDriverCheck.IsAvailable()` still returns true, and
+  `BeginCapture` just sees zero devices, indistinguishable from "no driver" or "no
+  network" without extra context. `BeginCapture`'s empty-device-list error checks
+  `PcapDriverCheck.IsRunningElevated()` (`WindowsPrincipal.IsInRole(Administrator)`)
+  and appends a "try running DWMB as Administrator" hint when the process isn't
+  elevated.
 
 Search for `TODO` before assuming a rough edge is a bug.
 

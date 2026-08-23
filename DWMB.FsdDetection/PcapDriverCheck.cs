@@ -1,3 +1,5 @@
+using System.Security.Principal;
+
 namespace DWMB_AIO.DWMB.FsdDetection
 {
     /// <summary>
@@ -46,6 +48,19 @@ namespace DWMB_AIO.DWMB.FsdDetection
                 "2. Run the installer. Enabling \"Install Npcap in WinPcap API-compatible Mode\" is the safest option.\n" +
                 "3. Restart DWMB after installing." +
                 detail;
+        }
+
+        /// <summary>
+        /// True if the current process is running elevated (as Administrator). Npcap
+        /// installed with "Restrict Npcap driver's access to Administrators only" hides
+        /// every adapter from a non-elevated process — the driver loads fine (so
+        /// <see cref="IsAvailable"/> returns true) but device enumeration silently comes
+        /// back empty, with nothing in the exception to say why.
+        /// </summary>
+        public static bool IsRunningElevated()
+        {
+            using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
         }
     }
 }
