@@ -50,8 +50,8 @@
           Shortcuts/KeyPath are under our control.
         -->
         <Files Include="$(var.AppPublishDir)**">
-          <Exclude Path="$(var.AppPublishDir)DWMB.exe" />
-          <Exclude Path="$(var.AppPublishDir)**\*.pdb" />
+          <Exclude Files="$(var.AppPublishDir)DWMB.exe" />
+          <Exclude Files="$(var.AppPublishDir)**\*.pdb" />
         </Files>
 
       </Directory>
