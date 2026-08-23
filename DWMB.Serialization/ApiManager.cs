@@ -2,6 +2,12 @@
 using RestSharp;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
+using System;
+using System.Diagnostics;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
+using Microsoft.Extensions.Configuration.UserSecrets;
+using System.Reflection;
 
 namespace DWMB_AIO.DWMB.Serialization
 {
@@ -62,15 +68,59 @@ namespace DWMB_AIO.DWMB.Serialization
             string constantName = environment == ServerEnvironment.Development
                 ? nameof(ServerConfig.ServerUrlDev)
                 : nameof(ServerConfig.ServerUrl);
-            string raw = (environment == ServerEnvironment.Development
-                ? ServerConfig.ServerUrlDev
-                : ServerConfig.ServerUrl).Trim();
+
+            // Priority: environment variable -> user-secrets / configuration -> compiled constant
+            string envKey = environment == ServerEnvironment.Development ? "DWMB_SERVER_URL_DEV" : "DWMB_SERVER_URL";
+
+            // 1) Check OS environment variables first
+            string? raw = Environment.GetEnvironmentVariable(envKey);
+            string source = "";
+
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                source = "Environment variable";
+            }
+
+            // 2) If not set, try IConfiguration with environment variables and user-secrets
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                try
+                {
+                    var configBuilder = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+                        .AddEnvironmentVariables()
+                        .AddUserSecrets(System.Reflection.Assembly.GetExecutingAssembly(), optional: true);
+
+                    var config = configBuilder.Build();
+                    raw = config[envKey];
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        source = "User-secrets / IConfiguration";
+                    }
+                }
+                catch
+                {
+                    // If user-secrets package isn't available or something fails, ignore and fallback to compiled constant
+                    raw = null;
+                }
+            }
+
+            // 3) Fallback to compiled-in constant
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                raw = (environment == ServerEnvironment.Development
+                    ? ServerConfig.ServerUrlDev
+                    : ServerConfig.ServerUrl).Trim();
+                source = "Compiled constant";
+            }
+
+            // Emit a debug log to indicate which source supplied the server URL (useful during local debugging)
+            Debug.WriteLine($"DWMB: Server URL source={source}; value={raw}");
 
             if (string.IsNullOrWhiteSpace(raw))
             {
                 throw new DWMBApiException(
                     $"The DWMB server URL is not configured (ServerConfig.{constantName} is empty). " +
-                    "This build was not compiled correctly.");
+                    "This build was not compiled correctly and no runtime override was provided.");
             }
 
             if (!Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) ||
