@@ -100,7 +100,10 @@ organized into folders that map to sub-namespaces:
   - `ApiObjects/` — DTOs (`ForwardedMessage`/`Message`, `ServerRegistrationResponse`,
     `MessageForwardRequest`).
   - `DWMBApiException` — API error type.
-- **`DWMB.Diagnostics`** — `Logger`, a minimal file logger (`log.txt` by default).
+- **`DWMB.Diagnostics`** — `Logger`, a minimal file logger. Defaults to
+  `%LOCALAPPDATA%\DontWallopMeBro\log.txt` — the exe installs to Program Files,
+  which a standard user can't write to, so the log can't live next to it or in
+  the process's working directory.
 
 ### Runtime flow
 

@@ -273,7 +273,7 @@ namespace DWMB_AIO
         // user actually starts, where the error is caught and shown as a friendly
         // dialog. IsRegistered/Stop already treat a null am as "not registered".
         static ApiManager? am;
-        static Logger logger = new(); // Default log file "log.txt"
+        static Logger logger = new(); // Default log file: %LOCALAPPDATA%\DontWallopMeBro\log.txt
         static ICaptureDevice? device; // Define at class level to share across Main and Stop functions
         static FsdMessage? lastMessage;
 

@@ -9,7 +9,7 @@ namespace DWMB_AIO
     /// </summary>
     public partial class App : Application
     {
-        private readonly Logger logger = new(); // Default log file "log.txt"
+        private readonly Logger logger = new(); // Default log file: %LOCALAPPDATA%\DontWallopMeBro\log.txt
 
         public App()
         {
@@ -25,7 +25,7 @@ namespace DWMB_AIO
             logger.Log("[UNHANDLED-UI] " + e.Exception);
             MessageBox.Show(
                 "An unexpected error occurred:\n\n" + e.Exception.Message +
-                "\n\nThe application will try to continue. See log.txt for details.",
+                "\n\nThe application will try to continue. See " + logger.FilePath + " for details.",
                 "DWMB - Unexpected Error", MessageBoxButton.OK, MessageBoxImage.Error);
 
             // Mark as handled so the UI thread keeps running instead of tearing down.
