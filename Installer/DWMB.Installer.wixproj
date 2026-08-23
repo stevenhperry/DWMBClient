@@ -11,6 +11,16 @@
 
     <!-- Exposed to Package.wxs as $(var.RepoRoot) / $(var.AppPublishDir) -->
     <DefineConstants>RepoRoot=$(MSBuildThisFileDirectory)..\;AppPublishDir=$(AppPublishDir)</DefineConstants>
+
+    <!--
+      WiX Toolset v7 requires accepting the Open Source Maintenance Fee (OSMF) EULA
+      before it will run (https://wixtoolset.org/osmf/) — WIX7015 otherwise. This is
+      the "direct acceptance" form FireGiant documents for build scripts/CI: the SDK
+      routes this property to wix.exe's -acceptEula switch itself, so it covers both
+      `dotnet build` here and the identical command in .github/workflows/installer.yml,
+      regardless of what (if any) global `wix` CLI tool version is on PATH.
+    -->
+    <AcceptEula>wix7</AcceptEula>
   </PropertyGroup>
 
   <ItemGroup>

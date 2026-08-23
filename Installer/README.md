@@ -31,6 +31,14 @@ separate WiX install needed).
 dotnet build Installer\DWMB.Installer.wixproj -c Release
 ```
 
+WiX Toolset v7 requires accepting FireGiant's [Open Source Maintenance Fee
+EULA](https://wixtoolset.org/osmf/) before it will build anything (`WIX7015`
+otherwise). `DWMB.Installer.wixproj` sets `<AcceptEula>wix7</AcceptEula>`,
+which is the "direct acceptance" form meant for build scripts/CI — it's
+routed straight to the SDK's own `wix.exe -acceptEula`, so it works
+regardless of whether (or which version of) the standalone `wix` CLI tool is
+installed globally. No separate `wix eula accept` step needed.
+
 The `.msi` is written under `Installer\bin\...\`. A GitHub Actions workflow
 (`.github/workflows/installer.yml`) builds it on `windows-latest` and uploads
 it as a workflow artifact — trigger it manually from the Actions tab if you
