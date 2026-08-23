@@ -82,7 +82,9 @@ which needs a libpcap-compatible driver installed on Windows.
 
 1. Launch DWMB.
 2. Enter your **Callsign** (letters, numbers, underscores, and hyphens only) and
-   your **Registration Code**.
+   your **Registration Code**. Leave **Use development server** unchecked
+   unless you were specifically told to test against the dev server — it can't
+   be changed once you're registered/capturing.
 3. Click **Start** to register and begin forwarding. If prompted, select your
    network adapter.
 4. The status fields show whether you are **Registered** and **Capturing**.
@@ -102,9 +104,9 @@ dotnet restore DWMB-AIO.sln
 dotnet build DWMB-AIO.sln -c Release
 ```
 
-The server URL used by a build from source is the placeholder committed in
-`DWMB.Serialization/ServerConfig.cs`; edit that file locally (uncommitted) to
-point at a real server for testing.
+The production/development server URLs used by a build from source are the
+placeholders committed in `DWMB.Serialization/ServerConfig.cs`; edit that file
+locally (uncommitted) to point at real servers for testing.
 
 ### Building the MSI installer
 

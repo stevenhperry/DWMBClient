@@ -48,17 +48,27 @@ is compiled into `DWMB.exe` (see below), so installs work with no manual setup s
 
 ### Server URL: compiled-in, not a loose file
 
-`ApiManager` reads the DWMB server base URL from the compiled-in
-`ServerConfig.ServerUrl` constant (`DWMB.Serialization/ServerConfig.cs`) when the
-first real `ApiManager` is constructed (on Start), via `LoadServerAddress()`.
-This used to be a `server_location.txt` file shipped next to the executable;
-it's now a build-time constant so there's no plaintext config file sitting in
-the install folder. `LoadServerAddress()` trims the value and validates it is a
-well-formed absolute URL; it must be `https://` (plain `http://` is rejected unless
-the host is loopback/localhost). An empty/invalid value raises a
-`DWMBApiException` with an actionable message, surfaced to the user as a dialog on
-Start rather than crashing at launch — that would mean the build itself is
-misconfigured, since there's no runtime file to go missing anymore.
+`ApiManager` reads the DWMB server base URL from a compiled-in constant in
+`DWMB.Serialization/ServerConfig.cs` — `ServerConfig.ServerUrl` (production) or
+`ServerConfig.ServerUrlDev` (development) — depending on the `ServerEnvironment`
+passed to its constructor, when the first real `ApiManager` is constructed (on
+Start), via `LoadServerAddress()`. This used to be a `server_location.txt` file
+shipped next to the executable; it's now a build-time constant so there's no
+plaintext config file sitting in the install folder. `LoadServerAddress()` trims
+the value and validates it is a well-formed absolute URL; it must be `https://`
+(plain `http://` is rejected unless the host is loopback/localhost). An
+empty/invalid value raises a `DWMBApiException` with an actionable message,
+surfaced to the user as a dialog on Start rather than crashing at launch — that
+would mean the build itself is misconfigured, since there's no runtime file to
+go missing anymore.
+
+The main window has a "Use development server" checkbox (`chkUseDevServer`,
+default unchecked = production), read in `btnStart_Click` and threaded through
+`DWMBClient.MainApp(..., ServerEnvironment environment)` into the `ApiManager`
+constructor. `LockInputs()`/`UnlockInputs()` disable/enable it alongside the
+callsign and registration-code fields, so it can't be changed while
+registered/capturing — the active `ApiManager` is already bound to whichever
+server it was constructed against.
 
 Note this only keeps the real URL out of the public git history — it is **not**
 a security boundary against someone who has the installed app. A .NET string
@@ -135,13 +145,14 @@ organized into folders that map to sub-namespaces:
 
 ## Git
 
-- `DWMB.Serialization/ServerConfig.cs` is committed with a **placeholder**
-  `ServerUrl` value (`https://example.com`), not the real production URL —
-  this repo is public, and the real URL was briefly committed (as
-  `server_location.txt`, since removed) and then removed from history
-  (reset + force-push) once that was noticed. Do not commit the real server
-  URL here; `.github/workflows/installer.yml` patches it in from the
-  `DWMB_SERVER_URL` repository secret for tagged (`v*`) builds. For a local
-  release build, edit `ServerConfig.cs` locally/out of band, uncommitted.
+- `DWMB.Serialization/ServerConfig.cs` is committed with **placeholder**
+  `ServerUrl`/`ServerUrlDev` values (`https://example.com`), not the real
+  production/development URLs — this repo is public, and the real (production)
+  URL was briefly committed (as `server_location.txt`, since removed) and then
+  removed from history (reset + force-push) once that was noticed. Do not
+  commit real server URLs here; `.github/workflows/installer.yml` patches them
+  in from the `DWMB_SERVER_URL` and `DWMB_SERVER_URL_DEV` repository secrets
+  for tagged (`v*`) builds. For a local release build, edit `ServerConfig.cs`
+  locally/out of band, uncommitted.
 - Do not commit `log.txt` or build output (all git-ignored).
 - Commit or push only when explicitly asked.

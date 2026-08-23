@@ -12,12 +12,14 @@ using the [WiX Toolset](https://wixtoolset.org/) v7 SDK-style project format.
 4. Produces `DWMB-AIO-Client-Setup.msi`, versioned to match `DWMB.exe`'s file
    version (i.e. whatever `<FileVersion>` is set to in `DWMB.csproj`).
 
-The DWMB server URL is compiled into `DWMB.exe` (see
-`../DWMB.Serialization/ServerConfig.cs`) rather than shipped as a loose file
-next to it, so installed clients work out of the box with no manual setup
-step and there's no plaintext config file sitting in the install folder. The
-committed constant holds a **placeholder** (`https://example.com`), not a
-real server address — see Notes below.
+The DWMB production and development server URLs are compiled into `DWMB.exe`
+(see `../DWMB.Serialization/ServerConfig.cs`) rather than shipped as a loose
+file next to it, so installed clients work out of the box with no manual
+setup step and there's no plaintext config file sitting in the install
+folder. The app's "Use development server" checkbox (default off) picks
+which of the two compiled-in URLs a session connects to. The committed
+constants hold **placeholders** (`https://example.com`), not real server
+addresses — see Notes below.
 
 ## Building
 
@@ -43,12 +45,13 @@ don't have a Windows machine handy.
 - The license/notice page shown during setup (`License.rtf`) isn't a legal
   license — there isn't one for this project — it's a short heads-up about
   the VATSIM CoC and the Npcap requirement.
-- The committed `ServerConfig.ServerUrl` is a placeholder (`https://example.com`)
-  on purpose — this repo is public, so don't commit the real production URL
-  here. `.github/workflows/installer.yml` patches it in automatically for
-  tagged builds (`v*`), reading the real URL from the `DWMB_SERVER_URL`
-  repository secret, so it never touches git history. A tagged build fails
-  loudly if that secret isn't set, rather than silently shipping the
+- The committed `ServerConfig.ServerUrl`/`ServerUrlDev` are placeholders
+  (`https://example.com`) on purpose — this repo is public, so don't commit
+  the real URLs here. `.github/workflows/installer.yml` patches them in
+  automatically for tagged builds (`v*`), reading the real URLs from the
+  `DWMB_SERVER_URL` (production) and `DWMB_SERVER_URL_DEV` (development)
+  repository secrets, so neither ever touches git history. A tagged build
+  fails loudly if either secret isn't set, rather than silently shipping the
   placeholder. For a manual/local release build, edit
   `DWMB.Serialization/ServerConfig.cs` locally (uncommitted) before building.
 - Note this only keeps the real URL out of the public repo — it does not

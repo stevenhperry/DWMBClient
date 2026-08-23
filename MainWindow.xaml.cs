@@ -33,10 +33,13 @@ namespace DWMB_AIO
         {
             string callsign = txtCallsign.Text;
             string regCode = txtRegCode.Text;
+            var environment = chkUseDevServer.IsChecked == true
+                ? ServerEnvironment.Development
+                : ServerEnvironment.Production;
 
             try
             {
-                var result = DWMBClient.MainApp(callsign, regCode, new Logger());  // returns success + optional error
+                var result = DWMBClient.MainApp(callsign, regCode, new Logger(), environment);  // returns success + optional error
 
                 if (!result.Success)
                 {
@@ -194,12 +197,17 @@ namespace DWMB_AIO
         {
             txtCallsign.IsEnabled = false;
             txtRegCode.IsEnabled = false;
+            // Prevent switching prod/dev servers while registered/capturing: the active
+            // ApiManager is already bound to whichever server it was constructed against,
+            // so flipping this mid-connection wouldn't reconnect anything.
+            chkUseDevServer.IsEnabled = false;
         }
 
         private void UnlockInputs()
         {
             txtCallsign.IsEnabled = true;
             txtRegCode.IsEnabled = true;
+            chkUseDevServer.IsEnabled = true;
         }
 
         private void KofiButton_Click(object sender, RoutedEventArgs e)
@@ -302,7 +310,7 @@ namespace DWMB_AIO
         /// Starts the client: validates input, registers, and begins capture.
         /// Returns a tuple indicating overall success and an error message when applicable.
         /// </summary>
-        public static (bool Success, string? Error) MainApp(string strCallsignInput, string strRegCode, Logger logger)
+        public static (bool Success, string? Error) MainApp(string strCallsignInput, string strRegCode, Logger logger, ServerEnvironment environment = ServerEnvironment.Production)
         {
             // check for valid inputs
 
@@ -327,7 +335,7 @@ namespace DWMB_AIO
                     // Build the ApiManager (reads/validates config) before taking the lock,
                     // then publish callsign + am together so the capture thread never sees a
                     // mismatched (am, callsign) pair (issue #10).
-                    ApiManager newAm = new ApiManager(strRegCode, strCallsignInput);
+                    ApiManager newAm = new ApiManager(strRegCode, strCallsignInput, environment);
                     lock (stateLock)
                     {
                         callsign = strCallsignInput;

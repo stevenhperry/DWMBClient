@@ -35,6 +35,16 @@
         <TextBox Name="txtRegCode" Width="325" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,100" Grid.ColumnSpan="2"/>
         <Label Content="Registration Code" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,125" Grid.ColumnSpan="2"/>
 
+        <!-- Server environment toggle. Defaults to unchecked (Production). Disabled while
+             registered/capturing so the target server can't change out from under an active
+             connection (see LockInputs/UnlockInputs). -->
+        <CheckBox Name="chkUseDevServer"
+                  Content="Use development server"
+                  IsChecked="False"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  ToolTip="Route messages to the DWMB development server instead of production. Cannot be changed while connected."/>
+
         <!-- Buttons -->
         <Button Name="btnStart" Content="Start" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-300,0,0,40" Click="btnStart_Click" Grid.ColumnSpan="2" ToolTip="Register and start forwarding!"/>
         <Button Name="btnStop" Content="Pause" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,40" Click="btnStop_Click" Grid.Column="1" ToolTip="Pause / stop capturing and forwarding."/>

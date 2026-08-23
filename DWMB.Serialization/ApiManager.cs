@@ -12,7 +12,7 @@ namespace DWMB_AIO.DWMB.Serialization
         // Using AppInfo to get version info
         private readonly string CLIENT_VERSION = $"DWMBClient/{DWMB_AIO.AppInfo.DisplayVersion}";
 
-        private readonly string SERVER_ADDRESS = LoadServerAddress();
+        private readonly string SERVER_ADDRESS;
         private readonly string MESSAGE_FORWARDING_ENDPOINT = "/api/v1/messaging";
         private readonly string REGISTRATION_ENDPOINT = "/api/v1/register";
         private readonly string DEREGISTRATION_ENDPOINT = "/api/v1/deregister";
@@ -30,11 +30,12 @@ namespace DWMB_AIO.DWMB.Serialization
 
 
         [SetsRequiredMembers]
-        public ApiManager(string token, string callsign)
+        public ApiManager(string token, string callsign, ServerEnvironment environment = ServerEnvironment.Production)
         {
             this.Token = token;
             this.Callsign = callsign;
             this.IsRegistered = false;
+            this.SERVER_ADDRESS = LoadServerAddress(environment);
 
             // Set up RestSharp client for use by other functions later
             var options = new RestClientOptions(SERVER_ADDRESS)
@@ -47,20 +48,28 @@ namespace DWMB_AIO.DWMB.Serialization
         }
 
         /// <summary>
-        /// Validates the compiled-in DWMB server base URL (<see cref="ServerConfig.ServerUrl"/>).
-        /// Throws <see cref="DWMBApiException"/> with an actionable message when it is empty or
-        /// not a well-formed absolute http(s) URL, so the caller can surface a friendly dialog
-        /// instead of a cryptic crash (issue #5). A bad value here means the build itself is
-        /// misconfigured, since the URL is compiled in rather than read from a file at runtime.
+        /// Validates the compiled-in DWMB server base URL for the requested
+        /// <paramref name="environment"/> (<see cref="ServerConfig.ServerUrl"/> for
+        /// Production, <see cref="ServerConfig.ServerUrlDev"/> for Development). Throws
+        /// <see cref="DWMBApiException"/> with an actionable message when it is empty or
+        /// not a well-formed absolute http(s) URL, so the caller can surface a friendly
+        /// dialog instead of a cryptic crash (issue #5). A bad value here means the build
+        /// itself is misconfigured, since the URL is compiled in rather than read from a
+        /// file at runtime.
         /// </summary>
-        private static string LoadServerAddress()
+        private static string LoadServerAddress(ServerEnvironment environment)
         {
-            string raw = ServerConfig.ServerUrl.Trim();
+            string constantName = environment == ServerEnvironment.Development
+                ? nameof(ServerConfig.ServerUrlDev)
+                : nameof(ServerConfig.ServerUrl);
+            string raw = (environment == ServerEnvironment.Development
+                ? ServerConfig.ServerUrlDev
+                : ServerConfig.ServerUrl).Trim();
 
             if (string.IsNullOrWhiteSpace(raw))
             {
                 throw new DWMBApiException(
-                    "The DWMB server URL is not configured (ServerConfig.ServerUrl is empty). " +
+                    $"The DWMB server URL is not configured (ServerConfig.{constantName} is empty). " +
                     "This build was not compiled correctly.");
             }
 
@@ -68,8 +77,8 @@ namespace DWMB_AIO.DWMB.Serialization
                 (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
                 throw new DWMBApiException(
-                    $"The configured DWMB server URL is not a valid absolute http(s) URL " +
-                    $"(found: '{raw}'). This build was not compiled correctly.");
+                    $"The configured DWMB server URL (ServerConfig.{constantName}) is not a valid " +
+                    $"absolute http(s) URL (found: '{raw}'). This build was not compiled correctly.");
             }
 
             // Require HTTPS for real servers so forwarded private/on-frequency message
@@ -78,9 +87,9 @@ namespace DWMB_AIO.DWMB.Serialization
             if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
             {
                 throw new DWMBApiException(
-                    $"The configured DWMB server URL uses an insecure 'http://' URL ('{raw}'). " +
-                    "Forwarded messages would travel in cleartext. Use 'https://' " +
-                    "(plain http is only permitted for localhost).");
+                    $"The configured DWMB server URL (ServerConfig.{constantName}) uses an insecure " +
+                    $"'http://' URL ('{raw}'). Forwarded messages would travel in cleartext. Use " +
+                    "'https://' (plain http is only permitted for localhost).");
             }
 
             return raw;
