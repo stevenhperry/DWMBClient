@@ -1,6 +1,5 @@
-# DWMB Specific gitignore
+## DWMB Specific Entries
 server_location.txt
-
 
 
 ## Ignore Visual Studio temporary files, build results, and

@@ -1,0 +1,78 @@
+name: Build MSI installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'Installer/**'
+      - 'DWMB.csproj'
+      - 'DWMB-AIO.sln'
+      - '.github/workflows/installer.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'Installer/**'
+      - 'DWMB.csproj'
+      - 'DWMB-AIO.sln'
+      - '.github/workflows/installer.yml'
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Inject production and development server URLs
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          SERVER_URL: ${{ secrets.DWMB_SERVER_URL }}
+          SERVER_URL_DEV: ${{ secrets.DWMB_SERVER_URL_DEV }}
+        run: |
+          function Set-ServerConfigConstant {
+            param([string]$Content, [string]$ConstantName, [string]$SecretName, [string]$Value)
+            if ([string]::IsNullOrWhiteSpace($Value)) {
+              throw "$SecretName secret is not set; refusing to build a tagged release with the placeholder server URL."
+            }
+            $escaped = $Value -replace '"', '\"'
+            $pattern = "public const string $ConstantName = `".*?`";"
+            $updated = [regex]::Replace($Content, $pattern, "public const string $ConstantName = `"$escaped`";")
+            if ($updated -eq $Content) {
+              throw "Failed to patch ServerConfig.cs: $ConstantName constant not found."
+            }
+            return $updated
+          }
+
+          $path = "DWMB.Serialization/ServerConfig.cs"
+          $content = Get-Content -Path $path -Raw
+          $content = Set-ServerConfigConstant -Content $content -ConstantName "ServerUrl" -SecretName "DWMB_SERVER_URL" -Value $env:SERVER_URL
+          $content = Set-ServerConfigConstant -Content $content -ConstantName "ServerUrlDev" -SecretName "DWMB_SERVER_URL_DEV" -Value $env:SERVER_URL_DEV
+          Set-Content -Path $path -Value $content -NoNewline
+
+      - name: Build MSI
+        run: dotnet build Installer/DWMB.Installer.wixproj -c Release
+
+      - name: Locate MSI
+        id: msi
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path Installer -Recurse -Filter *.msi | Select-Object -First 1
+          if (-not $msi) {
+            throw "No .msi was produced by the build."
+          }
+          "path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DWMB-AIO-Client-Setup
+          path: ${{ steps.msi.outputs.path }}
+          if-no-files-found: error

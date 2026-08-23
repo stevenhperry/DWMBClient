@@ -22,6 +22,8 @@ namespace DWMB_AIO
         {
             InitializeComponent();
 
+            CheckNpcapInstalled();
+
             // Surface forwarding failures raised on the capture thread (issue #8).
             DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
 
@@ -29,14 +31,51 @@ namespace DWMB_AIO
 
         }
 
+        /// <summary>
+        /// Warns the user at startup if no capture driver (Npcap) is found, with
+        /// instructions to install it, instead of only failing later when they click
+        /// Start. Non-blocking beyond the dialog itself — the window still opens either
+        /// way, since the user may just want to look around or deregister.
+        /// </summary>
+        private void CheckNpcapInstalled()
+        {
+            if (PcapDriverCheck.IsAvailable(out string? errorDetail))
+            {
+                return;
+            }
+
+            new Logger().Log("[STARTUP] Npcap/WinPcap driver not found: " + errorDetail);
+
+            var result = MessageBox.Show(
+                PcapDriverCheck.BuildMissingDriverMessage(errorDetail) + "\n\nOpen the Npcap download page now?",
+                "DWMB - Npcap Not Found",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(PcapDriverCheck.DownloadUrl) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Unable to open link: {ex.Message}", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
         private void btnStart_Click(object sender, RoutedEventArgs e)
         {
             string callsign = txtCallsign.Text;
             string regCode = txtRegCode.Text;
+            var environment = chkUseDevServer.IsChecked == true
+                ? ServerEnvironment.Development
+                : ServerEnvironment.Production;
 
             try
             {
-                var result = DWMBClient.MainApp(callsign, regCode, new Logger());  // returns success + optional error
+                var result = DWMBClient.MainApp(callsign, regCode, new Logger(), environment);  // returns success + optional error
 
                 if (!result.Success)
                 {
@@ -194,12 +233,17 @@ namespace DWMB_AIO
         {
             txtCallsign.IsEnabled = false;
             txtRegCode.IsEnabled = false;
+            // Prevent switching prod/dev servers while registered/capturing: the active
+            // ApiManager is already bound to whichever server it was constructed against,
+            // so flipping this mid-connection wouldn't reconnect anything.
+            chkUseDevServer.IsEnabled = false;
         }
 
         private void UnlockInputs()
         {
             txtCallsign.IsEnabled = true;
             txtRegCode.IsEnabled = true;
+            chkUseDevServer.IsEnabled = true;
         }
 
         private void KofiButton_Click(object sender, RoutedEventArgs e)
@@ -223,13 +267,13 @@ namespace DWMB_AIO
         // initialize variables
         static string callsign = "";
         // Deliberately null until the user clicks Start. Constructing an ApiManager
-        // eagerly here read server_location.txt in a field initializer, so a missing
-        // or malformed config file crashed the app at launch with a cryptic
-        // TypeInitializationException (issue #5). The file is now only read when the
+        // eagerly here validated the compiled-in server URL in a field initializer, so
+        // a malformed value crashed the app at launch with a cryptic
+        // TypeInitializationException (issue #5). It's now only validated when the
         // user actually starts, where the error is caught and shown as a friendly
         // dialog. IsRegistered/Stop already treat a null am as "not registered".
         static ApiManager? am;
-        static Logger logger = new(); // Default log file "log.txt"
+        static Logger logger = new(); // Default log file: %LOCALAPPDATA%\DontWallopMeBro\log.txt
         static ICaptureDevice? device; // Define at class level to share across Main and Stop functions
         static FsdMessage? lastMessage;
 
@@ -302,7 +346,7 @@ namespace DWMB_AIO
         /// Starts the client: validates input, registers, and begins capture.
         /// Returns a tuple indicating overall success and an error message when applicable.
         /// </summary>
-        public static (bool Success, string? Error) MainApp(string strCallsignInput, string strRegCode, Logger logger)
+        public static (bool Success, string? Error) MainApp(string strCallsignInput, string strRegCode, Logger logger, ServerEnvironment environment = ServerEnvironment.Production)
         {
             // check for valid inputs
 
@@ -327,7 +371,7 @@ namespace DWMB_AIO
                     // Build the ApiManager (reads/validates config) before taking the lock,
                     // then publish callsign + am together so the capture thread never sees a
                     // mismatched (am, callsign) pair (issue #10).
-                    ApiManager newAm = new ApiManager(strRegCode, strCallsignInput);
+                    ApiManager newAm = new ApiManager(strRegCode, strCallsignInput, environment);
                     lock (stateLock)
                     {
                         callsign = strCallsignInput;
@@ -371,12 +415,22 @@ namespace DWMB_AIO
             }
             catch (DWMBApiException dae)
             {
-                // Configuration / API problems (e.g. missing or malformed
-                // server_location.txt, no capture device) carry an actionable
-                // message — surface it directly instead of as "Unexpected error".
+                // Configuration / API problems (e.g. malformed compiled-in server
+                // URL, no capture device) carry an actionable message — surface it
+                // directly instead of as "Unexpected error".
                 logger.Log("[CONFIG-ERROR] " + dae.Message);
                 IsCapturing = false;
                 return (false, dae.Message);
+            }
+            catch (DllNotFoundException dnfe)
+            {
+                // Same failure the startup Npcap check watches for, just hit here
+                // instead (e.g. the check was dismissed, or the driver was removed
+                // mid-session). Give the same install instructions rather than a raw
+                // "Unable to load DLL 'wpcap'" message.
+                logger.Log("[CONFIG-ERROR] Npcap/WinPcap driver not found: " + dnfe.Message);
+                IsCapturing = false;
+                return (false, PcapDriverCheck.BuildMissingDriverMessage(dnfe.Message));
             }
             catch (Exception ex)
             {
@@ -631,9 +685,22 @@ namespace DWMB_AIO
                 // Console prompt loop and spun the UI at 100% CPU (issue #4). Fail with
                 // an actionable message instead.
                 logger.Log("[CAPTURE] No suitable network adapter found.");
-                throw new DWMBApiException(
+
+                string message =
                     "No suitable network adapter was found. Make sure Npcap (or WinPcap) is installed " +
-                    "and you have an active network connection, then try Start again.");
+                    "and you have an active network connection, then try Start again.";
+
+                // Npcap installed with "Restrict driver's access to Administrators only"
+                // hides every adapter from a non-elevated process instead of erroring, so
+                // this looks identical to "no driver"/"no network" unless we call it out.
+                if (!PcapDriverCheck.IsRunningElevated())
+                {
+                    message +=
+                        "\n\nIf Npcap was installed with \"Restrict Npcap driver's access to " +
+                        "Administrators only,\" try running DWMB as Administrator.";
+                }
+
+                throw new DWMBApiException(message);
             }
             else if (connections.Count == 1)
             {

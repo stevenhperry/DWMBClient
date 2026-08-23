@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="DWMB Client"
+           Manufacturer="DontWallopMeBro.com"
+           Version="!(bind.FileVersion.MainExecutable)"
+           UpgradeCode="4E34DE7B-C9B2-4FCB-99C0-30FF763C9652"
+           Language="1033"
+           Compressed="yes"
+           InstallerVersion="500"
+           Scope="perUser">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="DWMB.ico" SourceFile="$(var.RepoRoot)DWMB32.ico" />
+    <Property Id="ARPPRODUCTICON" Value="DWMB.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://www.dontwallopmebro.com" />
+    <Property Id="ARPHELPLINK" Value="https://www.dontwallopmebro.com" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!--
+      Per-user install (Scope="perUser" above): DWMB installs under the current user's
+      profile (%LOCALAPPDATA%\Programs\DontWallopMeBro) rather than Program Files, so
+      the MSI runs without a UAC elevation prompt. This is unrelated to Npcap possibly
+      needing an elevated DWMB.exe at runtime (see PcapDriverCheck.IsRunningElevated in
+      MainWindow.xaml.cs) — that's a separate, driver-configuration-dependent concern.
+    -->
+    <StandardDirectory Id="PerUserProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="DontWallopMeBro">
+
+        <Component Id="MainExecutableComponent" Guid="3C39567B-EA30-4F7D-A09C-F274FC28B02D">
+          <File Id="MainExecutable" Source="$(var.AppPublishDir)DWMB.exe" KeyPath="yes" />
+          <RemoveFolder Id="CleanUpInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        </Component>
+
+        <!--
+          Shortcuts live in their own component, keyed on an HKCU registry value rather
+          than the exe file, to satisfy MSI validation (ICE43/ICE57), which wants a
+          non-advertised shortcut's component keyed on a per-user registry value rather
+          than a file KeyPath.
+        -->
+        <Component Id="ApplicationShortcuts" Guid="A63D7778-B41C-4EDB-ACAE-5CBA344356A9">
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="DWMB Client"
+                    Description="Notifies you on Discord when someone tries to reach you on VATSIM"
+                    Target="[#MainExecutable]"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Icon="DWMB.ico"
+                    Advertise="no" />
+          <Shortcut Id="DesktopShortcut"
+                    Directory="DesktopFolder"
+                    Name="DWMB Client"
+                    Description="Notifies you on Discord when someone tries to reach you on VATSIM"
+                    Target="[#MainExecutable]"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Icon="DWMB.ico"
+                    Advertise="no" />
+          <RegistryValue Root="HKCU"
+                          Key="Software\DontWallopMeBro\DWMB Client"
+                          Name="Installed"
+                          Type="integer"
+                          Value="1"
+                          KeyPath="yes" />
+        </Component>
+
+        <!--
+          Everything else dotnet publish produced: managed DLLs, the self-contained .NET
+          runtime, native SharpPcap/PacketDotNet dependencies, and DWMB32.ico. The server
+          URL is compiled into DWMB.exe (see DWMB.Serialization/ServerConfig.cs) rather
+          than shipped as a loose file. DWMB.exe is authored explicitly above so its
+          Shortcuts/KeyPath are under our control.
+        -->
+        <Files Include="$(var.AppPublishDir)**">
+          <Exclude Files="$(var.AppPublishDir)DWMB.exe" />
+          <Exclude Files="$(var.AppPublishDir)**\*.pdb" />
+        </Files>
+
+      </Directory>
+    </StandardDirectory>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+  </Package>
+</Wix>

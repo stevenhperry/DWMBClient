@@ -2,6 +2,12 @@
 using RestSharp;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
+using System;
+using System.Diagnostics;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
+using Microsoft.Extensions.Configuration.UserSecrets;
+using System.Reflection;
 
 namespace DWMB_AIO.DWMB.Serialization
 {
@@ -12,8 +18,7 @@ namespace DWMB_AIO.DWMB.Serialization
         // Using AppInfo to get version info
         private readonly string CLIENT_VERSION = $"DWMBClient/{DWMB_AIO.AppInfo.DisplayVersion}";
 
-        private const string SERVER_LOCATION_FILE = "server_location.txt";
-        private readonly string SERVER_ADDRESS = LoadServerAddress();
+        private readonly string SERVER_ADDRESS;
         private readonly string MESSAGE_FORWARDING_ENDPOINT = "/api/v1/messaging";
         private readonly string REGISTRATION_ENDPOINT = "/api/v1/register";
         private readonly string DEREGISTRATION_ENDPOINT = "/api/v1/deregister";
@@ -31,11 +36,12 @@ namespace DWMB_AIO.DWMB.Serialization
 
 
         [SetsRequiredMembers]
-        public ApiManager(string token, string callsign)
+        public ApiManager(string token, string callsign, ServerEnvironment environment = ServerEnvironment.Production)
         {
             this.Token = token;
             this.Callsign = callsign;
             this.IsRegistered = false;
+            this.SERVER_ADDRESS = LoadServerAddress(environment);
 
             // Set up RestSharp client for use by other functions later
             var options = new RestClientOptions(SERVER_ADDRESS)
@@ -48,46 +54,81 @@ namespace DWMB_AIO.DWMB.Serialization
         }
 
         /// <summary>
-        /// Reads and validates the DWMB server base URL from <see cref="SERVER_LOCATION_FILE"/>.
-        /// Throws <see cref="DWMBApiException"/> with an actionable message when the file is
-        /// missing, empty, or does not contain a well-formed absolute http(s) URL, so the
-        /// caller can surface a friendly dialog instead of a cryptic crash (issue #5).
+        /// Validates the compiled-in DWMB server base URL for the requested
+        /// <paramref name="environment"/> (<see cref="ServerConfig.ServerUrl"/> for
+        /// Production, <see cref="ServerConfig.ServerUrlDev"/> for Development). Throws
+        /// <see cref="DWMBApiException"/> with an actionable message when it is empty or
+        /// not a well-formed absolute http(s) URL, so the caller can surface a friendly
+        /// dialog instead of a cryptic crash (issue #5). A bad value here means the build
+        /// itself is misconfigured, since the URL is compiled in rather than read from a
+        /// file at runtime.
         /// </summary>
-        private static string LoadServerAddress()
+        private static string LoadServerAddress(ServerEnvironment environment)
         {
-            if (!System.IO.File.Exists(SERVER_LOCATION_FILE))
+            string constantName = environment == ServerEnvironment.Development
+                ? nameof(ServerConfig.ServerUrlDev)
+                : nameof(ServerConfig.ServerUrl);
+
+            // Priority: environment variable -> user-secrets / configuration -> compiled constant
+            string envKey = environment == ServerEnvironment.Development ? "DWMB_SERVER_URL_DEV" : "DWMB_SERVER_URL";
+
+            // 1) Check OS environment variables first
+            string? raw = Environment.GetEnvironmentVariable(envKey);
+            string source = "";
+
+            if (!string.IsNullOrWhiteSpace(raw))
             {
-                throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' was not found next to the application. " +
-                    "Create it and put your DWMB server URL on a single line (e.g. https://example.com).");
+                source = "Environment variable";
             }
 
-            string raw;
-            try
+            // 2) If not set, try IConfiguration with environment variables and user-secrets
+            if (string.IsNullOrWhiteSpace(raw))
             {
-                // Trim to tolerate a trailing newline/whitespace, which previously
-                // silently corrupted the base URL passed to RestSharp.
-                raw = System.IO.File.ReadAllText(SERVER_LOCATION_FILE).Trim();
+                try
+                {
+                    var configBuilder = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+                        .AddEnvironmentVariables()
+                        .AddUserSecrets(System.Reflection.Assembly.GetExecutingAssembly(), optional: true);
+
+                    var config = configBuilder.Build();
+                    raw = config[envKey];
+                    if (!string.IsNullOrWhiteSpace(raw))
+                    {
+                        source = "User-secrets / IConfiguration";
+                    }
+                }
+                catch
+                {
+                    // If user-secrets package isn't available or something fails, ignore and fallback to compiled constant
+                    raw = null;
+                }
             }
-            catch (Exception ex)
+
+            // 3) Fallback to compiled-in constant
+            if (string.IsNullOrWhiteSpace(raw))
             {
-                throw new DWMBApiException(
-                    $"Could not read configuration file '{SERVER_LOCATION_FILE}': {ex.Message}", ex);
+                raw = (environment == ServerEnvironment.Development
+                    ? ServerConfig.ServerUrlDev
+                    : ServerConfig.ServerUrl).Trim();
+                source = "Compiled constant";
             }
+
+            // Emit a debug log to indicate which source supplied the server URL (useful during local debugging)
+            Debug.WriteLine($"DWMB: Server URL source={source}; value={raw}");
 
             if (string.IsNullOrWhiteSpace(raw))
             {
                 throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' is empty. " +
-                    "It must contain the DWMB server URL (e.g. https://example.com).");
+                    $"The DWMB server URL is not configured (ServerConfig.{constantName} is empty). " +
+                    "This build was not compiled correctly and no runtime override was provided.");
             }
 
             if (!Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) ||
                 (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
                 throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' does not contain a valid absolute " +
-                    $"http(s) URL (found: '{raw}'). Example: https://example.com");
+                    $"The configured DWMB server URL (ServerConfig.{constantName}) is not a valid " +
+                    $"absolute http(s) URL (found: '{raw}'). This build was not compiled correctly.");
             }
 
             // Require HTTPS for real servers so forwarded private/on-frequency message
@@ -96,9 +137,9 @@ namespace DWMB_AIO.DWMB.Serialization
             if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
             {
                 throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' uses an insecure 'http://' URL " +
-                    $"('{raw}'). Forwarded messages would travel in cleartext. Use 'https://' " +
-                    "(plain http is only permitted for localhost).");
+                    $"The configured DWMB server URL (ServerConfig.{constantName}) uses an insecure " +
+                    $"'http://' URL ('{raw}'). Forwarded messages would travel in cleartext. Use " +
+                    "'https://' (plain http is only permitted for localhost).");
             }
 
             return raw;

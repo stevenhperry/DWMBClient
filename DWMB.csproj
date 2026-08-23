@@ -12,31 +12,31 @@
     <StartupObject>DWMB_AIO.App</StartupObject>
 
     <!-- Add these to control versions produced by the build -->
-    <Version>1.1.0.1</Version>                <!-- NuGet / package / product version -->
-    <AssemblyVersion>1.1.0.1</AssemblyVersion> <!-- runtime binding version -->
-    <FileVersion>1.1.0.1</FileVersion>       <!-- file property shown in Explorer -->
-    <InformationalVersion>1.1.0.1</InformationalVersion> <!-- product display (semver+metadata) -->
+    <Version>1.2.0.0</Version>                <!-- NuGet / package / product version -->
+    <AssemblyVersion>1.2.0.0</AssemblyVersion> <!-- runtime binding version -->
+    <FileVersion>1.2.0.0</FileVersion>       <!-- file property shown in Explorer -->
+    <InformationalVersion>1.2.0.0</InformationalVersion> <!-- product display (semver+metadata) -->
     <Deterministic>true</Deterministic>
+    <UserSecretsId>65d95da4-a6b6-4be7-96c9-e0cc86c68f2c</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <None Remove="DWMB AutoPilot Icon.png" />
     <None Remove="DWMB32.png" />
     <None Remove="kofi_qrcode.png" />
-    <None Remove="server_location.txt" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="DWMB32.ico" />
-    <Content Include="server_location.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="PacketDotNet" Version="1.4.8" />
     <PackageReference Include="RestSharp" Version="112.1.0" />
     <PackageReference Include="SharpPcap" Version="6.3.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>

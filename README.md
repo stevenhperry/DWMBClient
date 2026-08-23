@@ -69,21 +69,36 @@ which needs a libpcap-compatible driver installed on Windows.
 > **Note:** As of version 1.1, Npcap is the officially supported solution.  No
 > further support of WinPCap will be offered.
 
+Note this Administrator requirement is about *running DWMB* when Npcap's driver
+access is restricted — it's unrelated to installing DWMB itself. The DWMB
+installer installs per-user (no admin/UAC prompt); Npcap's own installer is
+separate and does need admin, since it installs a kernel driver.
+
+DWMB checks for a working capture driver at startup; if none is found, it shows
+a dialog explaining that Npcap is missing, with a link to the download page and
+the steps above. The app still opens either way — you just won't be able to
+**Start** until a driver is installed and DWMB is restarted.
+
+If Npcap is installed but restricted to Administrators (see above) and DWMB
+isn't running elevated, **Start** will find zero network adapters — the
+resulting error mentions trying "Run as Administrator" as the likely fix.
+
 
 ## Setup
 
 1. Install the .NET 9 Desktop Runtime and Npcap (see Requirements).
 2. Register with the DWMB Discord bot to get your registration code.
-3. Make sure a **`server_location.txt`** file sits next to `DWMB.exe`, containing a
-   single line with the DWMB server's base URL (for example, `https://example.com`).
-   The client reads this file at startup to know where to send messages. If it is
-   missing, the client will fail to start.
+3. The DWMB server's base URL is compiled into `DWMB.exe` — there's nothing
+   to configure. If it's ever missing or malformed (e.g. a bad local build),
+   the app fails to start with an actionable error instead of a crash.
 
 ## Usage
 
 1. Launch DWMB.
 2. Enter your **Callsign** (letters, numbers, underscores, and hyphens only) and
-   your **Registration Code**.
+   your **Registration Code**. Leave **Use development server** unchecked
+   unless you were specifically told to test against the dev server — it can't
+   be changed once you're registered/capturing.
 3. Click **Start** to register and begin forwarding. If prompted, select your
    network adapter.
 4. The status fields show whether you are **Registered** and **Capturing**.
@@ -103,9 +118,22 @@ dotnet restore DWMB-AIO.sln
 dotnet build DWMB-AIO.sln -c Release
 ```
 
-Remember to place a `server_location.txt` next to the built executable before
-running (it is copied to the output directory on build if present, but is not
-committed to the repository).
+The production/development server URLs used by a build from source are the
+placeholders committed in `DWMB.Serialization/ServerConfig.cs`; edit that file
+locally (uncommitted) to point at real servers for testing.
+
+### Building the MSI installer
+
+A self-contained Windows Installer (`.msi`) can be built from the
+[`Installer/`](Installer/) folder using the WiX Toolset:
+
+```
+dotnet build Installer\DWMB.Installer.wixproj -c Release
+```
+
+See [`Installer/README.md`](Installer/README.md) for details, or trigger the
+`Build MSI installer` GitHub Actions workflow to get a built `.msi` without a
+local Windows machine.
 
 ## Support
 
