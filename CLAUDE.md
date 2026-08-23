@@ -4,7 +4,7 @@ Guidance for working in this repository.
 
 ## What this project is
 
-**DWMB ("Don't Wallop Me Bro") AIO Client** is a Windows desktop application for
+**DWMB ("Don't Wallop Me Bro") Client** is a Windows desktop application for
 the [VATSIM](https://vatsim.net) flight-simulation network. It passively captures
 FSD-protocol network traffic, detects private messages and on-frequency messages
 addressed to the user, and forwards them to the DWMB server, which relays them to

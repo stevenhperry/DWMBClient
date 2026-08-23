@@ -1,6 +1,6 @@
 # DWMB MSI installer
 
-This folder builds a Windows Installer (`.msi`) package for the DWMB AIO Client
+This folder builds a Windows Installer (`.msi`) package for the DWMB Client
 using the [WiX Toolset](https://wixtoolset.org/) v7 SDK-style project format.
 
 ## What it does
