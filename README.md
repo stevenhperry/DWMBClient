@@ -107,6 +107,19 @@ Remember to place a `server_location.txt` next to the built executable before
 running (it is copied to the output directory on build if present, but is not
 committed to the repository).
 
+### Building the MSI installer
+
+A self-contained Windows Installer (`.msi`) can be built from the
+[`Installer/`](Installer/) folder using the WiX Toolset:
+
+```
+dotnet build Installer\DWMB.Installer.wixproj -c Release
+```
+
+See [`Installer/README.md`](Installer/README.md) for details, or trigger the
+`Build MSI installer` GitHub Actions workflow to get a built `.msi` without a
+local Windows machine.
+
 ## Support
 
 If DWMB is useful to you, you can support development on

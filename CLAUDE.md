@@ -36,6 +36,16 @@ dotnet run --project DWMB.csproj
 
 There is no test project.
 
+### MSI installer
+
+`Installer/DWMB.Installer.wixproj` is a separate WiX Toolset v7 SDK-style project
+(not part of `DWMB-AIO.sln`) that `dotnet publish`-es `DWMB.csproj` self-contained
+(`win-x64`) and packages it as `DWMB-AIO-Client-Setup.msi`. Build it with
+`dotnet build Installer\DWMB.Installer.wixproj -c Release`; see
+`Installer/README.md` for details. `.github/workflows/installer.yml` builds it in
+CI (`windows-latest`) and uploads the `.msi` as a workflow artifact.
+`server_location.txt` is never bundled into the MSI, same as the normal build.
+
 ### Runtime requirement: `server_location.txt`
 
 `ApiManager` reads the DWMB server base URL from a `server_location.txt` file when

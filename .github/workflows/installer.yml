@@ -1,0 +1,51 @@
+name: Build MSI installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'Installer/**'
+      - 'DWMB.csproj'
+      - 'DWMB-AIO.sln'
+      - '.github/workflows/installer.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'Installer/**'
+      - 'DWMB.csproj'
+      - 'DWMB-AIO.sln'
+      - '.github/workflows/installer.yml'
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build MSI
+        run: dotnet build Installer/DWMB.Installer.wixproj -c Release
+
+      - name: Locate MSI
+        id: msi
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path Installer -Recurse -Filter *.msi | Select-Object -First 1
+          if (-not $msi) {
+            throw "No .msi was produced by the build."
+          }
+          "path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DWMB-AIO-Client-Setup
+          path: ${{ steps.msi.outputs.path }}
+          if-no-files-found: error

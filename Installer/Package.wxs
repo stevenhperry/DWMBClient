@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="DWMB AIO Client"
+           Manufacturer="Don't Wallop Me Bro"
+           Version="!(bind.FileVersion.MainExecutable)"
+           UpgradeCode="4E34DE7B-C9B2-4FCB-99C0-30FF763C9652"
+           Language="1033"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed. Setup will now exit." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="DWMB.ico" SourceFile="$(var.RepoRoot)DWMB32.ico" />
+    <Property Id="ARPPRODUCTICON" Value="DWMB.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://www.dontwallopmebro.com" />
+    <Property Id="ARPHELPLINK" Value="https://www.dontwallopmebro.com" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="DWMB AIO Client">
+
+        <Component Id="MainExecutableComponent" Guid="3C39567B-EA30-4F7D-A09C-F274FC28B02D">
+          <File Id="MainExecutable" Source="$(var.AppPublishDir)DWMB.exe" KeyPath="yes">
+            <Shortcut Id="StartMenuShortcut"
+                      Directory="ProgramMenuFolder"
+                      Name="DWMB AIO Client"
+                      Description="Notifies you on Discord when someone tries to reach you on VATSIM"
+                      WorkingDirectory="INSTALLFOLDER"
+                      Icon="DWMB.ico"
+                      Advertise="no" />
+            <Shortcut Id="DesktopShortcut"
+                      Directory="DesktopFolder"
+                      Name="DWMB AIO Client"
+                      Description="Notifies you on Discord when someone tries to reach you on VATSIM"
+                      WorkingDirectory="INSTALLFOLDER"
+                      Icon="DWMB.ico"
+                      Advertise="no" />
+          </File>
+          <RemoveFolder Id="CleanUpInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        </Component>
+
+        <!--
+          Everything else dotnet publish produced (managed DLLs, the self-contained .NET
+          runtime, native SharpPcap/PacketDotNet dependencies, DWMB32.ico, etc). DWMB.exe is
+          authored explicitly above so its Shortcuts/KeyPath are under our control, and
+          server_location.txt is never shipped - see DWMB.Installer.wixproj.
+        -->
+        <Files Include="$(var.AppPublishDir)**" Exclude="**\DWMB.exe;**\server_location.txt;**\*.pdb" />
+
+      </Directory>
+    </StandardDirectory>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+  </Package>
+</Wix>
