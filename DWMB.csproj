@@ -23,14 +23,10 @@
     <None Remove="DWMB AutoPilot Icon.png" />
     <None Remove="DWMB32.png" />
     <None Remove="kofi_qrcode.png" />
-    <None Remove="server_location.txt" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="DWMB32.ico" />
-    <Content Include="server_location.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>

@@ -44,8 +44,9 @@
 
         <!--
           Everything else dotnet publish produced: managed DLLs, the self-contained .NET
-          runtime, native SharpPcap/PacketDotNet dependencies, DWMB32.ico, and
-          server_location.txt. DWMB.exe is authored explicitly above so its
+          runtime, native SharpPcap/PacketDotNet dependencies, and DWMB32.ico. The server
+          URL is compiled into DWMB.exe (see DWMB.Serialization/ServerConfig.cs) rather
+          than shipped as a loose file. DWMB.exe is authored explicitly above so its
           Shortcuts/KeyPath are under our control.
         -->
         <Files Include="$(var.AppPublishDir)**" Exclude="**\DWMB.exe;**\*.pdb" />

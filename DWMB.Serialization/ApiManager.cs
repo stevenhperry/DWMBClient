@@ -12,7 +12,6 @@ namespace DWMB_AIO.DWMB.Serialization
         // Using AppInfo to get version info
         private readonly string CLIENT_VERSION = $"DWMBClient/{DWMB_AIO.AppInfo.DisplayVersion}";
 
-        private const string SERVER_LOCATION_FILE = "server_location.txt";
         private readonly string SERVER_ADDRESS = LoadServerAddress();
         private readonly string MESSAGE_FORWARDING_ENDPOINT = "/api/v1/messaging";
         private readonly string REGISTRATION_ENDPOINT = "/api/v1/register";
@@ -48,46 +47,29 @@ namespace DWMB_AIO.DWMB.Serialization
         }
 
         /// <summary>
-        /// Reads and validates the DWMB server base URL from <see cref="SERVER_LOCATION_FILE"/>.
-        /// Throws <see cref="DWMBApiException"/> with an actionable message when the file is
-        /// missing, empty, or does not contain a well-formed absolute http(s) URL, so the
-        /// caller can surface a friendly dialog instead of a cryptic crash (issue #5).
+        /// Validates the compiled-in DWMB server base URL (<see cref="ServerConfig.ServerUrl"/>).
+        /// Throws <see cref="DWMBApiException"/> with an actionable message when it is empty or
+        /// not a well-formed absolute http(s) URL, so the caller can surface a friendly dialog
+        /// instead of a cryptic crash (issue #5). A bad value here means the build itself is
+        /// misconfigured, since the URL is compiled in rather than read from a file at runtime.
         /// </summary>
         private static string LoadServerAddress()
         {
-            if (!System.IO.File.Exists(SERVER_LOCATION_FILE))
-            {
-                throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' was not found next to the application. " +
-                    "Create it and put your DWMB server URL on a single line (e.g. https://example.com).");
-            }
-
-            string raw;
-            try
-            {
-                // Trim to tolerate a trailing newline/whitespace, which previously
-                // silently corrupted the base URL passed to RestSharp.
-                raw = System.IO.File.ReadAllText(SERVER_LOCATION_FILE).Trim();
-            }
-            catch (Exception ex)
-            {
-                throw new DWMBApiException(
-                    $"Could not read configuration file '{SERVER_LOCATION_FILE}': {ex.Message}", ex);
-            }
+            string raw = ServerConfig.ServerUrl.Trim();
 
             if (string.IsNullOrWhiteSpace(raw))
             {
                 throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' is empty. " +
-                    "It must contain the DWMB server URL (e.g. https://example.com).");
+                    "The DWMB server URL is not configured (ServerConfig.ServerUrl is empty). " +
+                    "This build was not compiled correctly.");
             }
 
             if (!Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) ||
                 (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
                 throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' does not contain a valid absolute " +
-                    $"http(s) URL (found: '{raw}'). Example: https://example.com");
+                    $"The configured DWMB server URL is not a valid absolute http(s) URL " +
+                    $"(found: '{raw}'). This build was not compiled correctly.");
             }
 
             // Require HTTPS for real servers so forwarded private/on-frequency message
@@ -96,8 +78,8 @@ namespace DWMB_AIO.DWMB.Serialization
             if (uri.Scheme == Uri.UriSchemeHttp && !uri.IsLoopback)
             {
                 throw new DWMBApiException(
-                    $"Configuration file '{SERVER_LOCATION_FILE}' uses an insecure 'http://' URL " +
-                    $"('{raw}'). Forwarded messages would travel in cleartext. Use 'https://' " +
+                    $"The configured DWMB server URL uses an insecure 'http://' URL ('{raw}'). " +
+                    "Forwarded messages would travel in cleartext. Use 'https://' " +
                     "(plain http is only permitted for localhost).");
             }
 

@@ -30,6 +30,24 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
+      - name: Inject production server URL
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          SERVER_URL: ${{ secrets.DWMB_SERVER_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SERVER_URL)) {
+            throw "DWMB_SERVER_URL secret is not set; refusing to build a tagged release with the placeholder server URL."
+          }
+          $path = "DWMB.Serialization/ServerConfig.cs"
+          $content = Get-Content -Path $path -Raw
+          $escaped = $env:SERVER_URL -replace '"', '\"'
+          $updated = $content -replace 'public const string ServerUrl = ".*?";', "public const string ServerUrl = `"$escaped`";"
+          if ($updated -eq $content) {
+            throw "Failed to patch ServerConfig.cs: ServerUrl constant not found."
+          }
+          Set-Content -Path $path -Value $updated -NoNewline
+
       - name: Build MSI
         run: dotnet build Installer/DWMB.Installer.wixproj -c Release
 

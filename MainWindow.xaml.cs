@@ -223,9 +223,9 @@ namespace DWMB_AIO
         // initialize variables
         static string callsign = "";
         // Deliberately null until the user clicks Start. Constructing an ApiManager
-        // eagerly here read server_location.txt in a field initializer, so a missing
-        // or malformed config file crashed the app at launch with a cryptic
-        // TypeInitializationException (issue #5). The file is now only read when the
+        // eagerly here validated the compiled-in server URL in a field initializer, so
+        // a malformed value crashed the app at launch with a cryptic
+        // TypeInitializationException (issue #5). It's now only validated when the
         // user actually starts, where the error is caught and shown as a friendly
         // dialog. IsRegistered/Stop already treat a null am as "not registered".
         static ApiManager? am;
@@ -371,9 +371,9 @@ namespace DWMB_AIO
             }
             catch (DWMBApiException dae)
             {
-                // Configuration / API problems (e.g. missing or malformed
-                // server_location.txt, no capture device) carry an actionable
-                // message — surface it directly instead of as "Unexpected error".
+                // Configuration / API problems (e.g. malformed compiled-in server
+                // URL, no capture device) carry an actionable message — surface it
+                // directly instead of as "Unexpected error".
                 logger.Log("[CONFIG-ERROR] " + dae.Message);
                 IsCapturing = false;
                 return (false, dae.Message);

@@ -12,11 +12,12 @@ using the [WiX Toolset](https://wixtoolset.org/) v7 SDK-style project format.
 4. Produces `DWMB-AIO-Client-Setup.msi`, versioned to match `DWMB.exe`'s file
    version (i.e. whatever `<FileVersion>` is set to in `DWMB.csproj`).
 
-`server_location.txt` is bundled into the MSI — it's committed at the repo
-root (`../server_location.txt`) and gets published/harvested like any other
-output file, so installed clients work out of the box with no manual setup
-step. The committed copy holds a **placeholder** (`https://example.com`),
-not a real server address — see Notes below.
+The DWMB server URL is compiled into `DWMB.exe` (see
+`../DWMB.Serialization/ServerConfig.cs`) rather than shipped as a loose file
+next to it, so installed clients work out of the box with no manual setup
+step and there's no plaintext config file sitting in the install folder. The
+committed constant holds a **placeholder** (`https://example.com`), not a
+real server address — see Notes below.
 
 ## Building
 
@@ -42,7 +43,18 @@ don't have a Windows machine handy.
 - The license/notice page shown during setup (`License.rtf`) isn't a legal
   license — there isn't one for this project — it's a short heads-up about
   the VATSIM CoC and the Npcap requirement.
-- The committed `server_location.txt` is a placeholder (`https://example.com`)
+- The committed `ServerConfig.ServerUrl` is a placeholder (`https://example.com`)
   on purpose — this repo is public, so don't commit the real production URL
-  here. Point it at the real server locally (uncommitted) before building a
-  release you intend to actually distribute.
+  here. `.github/workflows/installer.yml` patches it in automatically for
+  tagged builds (`v*`), reading the real URL from the `DWMB_SERVER_URL`
+  repository secret, so it never touches git history. A tagged build fails
+  loudly if that secret isn't set, rather than silently shipping the
+  placeholder. For a manual/local release build, edit
+  `DWMB.Serialization/ServerConfig.cs` locally (uncommitted) before building.
+- Note this only keeps the real URL out of the public repo — it does not
+  hide it from anyone who has the installed app. A .NET string constant
+  sits in the compiled assembly in plaintext and is trivial to recover with
+  `strings` or a decompiler (ILSpy/dnSpy). Don't treat this as a security
+  boundary; if the goal is preventing unauthorized use of the API, enforce
+  that server-side (validate the registration code, rate-limit), not by
+  hiding the endpoint.

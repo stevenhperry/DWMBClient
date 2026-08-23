@@ -43,23 +43,29 @@ There is no test project.
 (`win-x64`) and packages it as `DWMB-AIO-Client-Setup.msi`. Build it with
 `dotnet build Installer\DWMB.Installer.wixproj -c Release`; see
 `Installer/README.md` for details. `.github/workflows/installer.yml` builds it in
-CI (`windows-latest`) and uploads the `.msi` as a workflow artifact.
-`server_location.txt` is bundled into the MSI (see below), so installs work
-with no manual setup step.
+CI (`windows-latest`) and uploads the `.msi` as a workflow artifact. The server URL
+is compiled into `DWMB.exe` (see below), so installs work with no manual setup step.
 
-### Runtime requirement: `server_location.txt`
+### Server URL: compiled-in, not a loose file
 
-`ApiManager` reads the DWMB server base URL from a `server_location.txt` file when
-the first real `ApiManager` is constructed (on Start), via `LoadServerAddress()`.
-The file is copied to the output directory on build (`CopyToOutputDirectory=Always`)
-and is **committed at the repo root** — it must exist next to the executable at
-runtime, and both `dotnet build`/`publish` and the MSI installer carry it along
-automatically. It contains a single line, the server base URL.
-`LoadServerAddress()` trims the value and validates it is a
+`ApiManager` reads the DWMB server base URL from the compiled-in
+`ServerConfig.ServerUrl` constant (`DWMB.Serialization/ServerConfig.cs`) when the
+first real `ApiManager` is constructed (on Start), via `LoadServerAddress()`.
+This used to be a `server_location.txt` file shipped next to the executable;
+it's now a build-time constant so there's no plaintext config file sitting in
+the install folder. `LoadServerAddress()` trims the value and validates it is a
 well-formed absolute URL; it must be `https://` (plain `http://` is rejected unless
-the host is loopback/localhost). A missing/empty/invalid file raises a
+the host is loopback/localhost). An empty/invalid value raises a
 `DWMBApiException` with an actionable message, surfaced to the user as a dialog on
-Start rather than crashing at launch.
+Start rather than crashing at launch — that would mean the build itself is
+misconfigured, since there's no runtime file to go missing anymore.
+
+Note this only keeps the real URL out of the public git history — it is **not**
+a security boundary against someone who has the installed app. A .NET string
+constant sits in the compiled assembly in plaintext (`strings DWMB.exe` or any
+decompiler recovers it trivially). If a change needs to actually restrict who
+can use the API, that has to be enforced server-side (validate the
+registration code, rate-limit), not by hiding the endpoint.
 
 ## Architecture
 
@@ -111,8 +117,8 @@ organized into folders that map to sub-namespaces:
 - **FSD protocol:** VATSIM FSD runs on TCP port 6809. `#TM<sender>:<recipient>:<message>`
   is a text message; frequency messages address `@xxyyy` (frequency `1xx.yyy`).
 - **`DWMBClient` uses static state** (`callsign`, `am`, `device`, `IsCapturing`).
-  `am` is `null` until the user clicks Start (constructing it early read
-  `server_location.txt` in a field initializer and crashed the app at launch), then
+  `am` is `null` until the user clicks Start (constructing it early validated the
+  compiled-in server URL in a field initializer and crashed the app at launch), then
   it is set to a real `ApiManager` on Start. The shared statics that are touched by
   both the capture thread and the UI thread (`am`, `callsign`, `lastMessage`) are
   guarded by `stateLock`; the capture thread snapshots them under the lock and never
@@ -129,10 +135,13 @@ organized into folders that map to sub-namespaces:
 
 ## Git
 
-- `server_location.txt` is committed at the repo root with a **placeholder**
-  value (`https://example.com`), not the real production URL — this repo is
-  public, and the real URL was briefly committed and then removed from
-  history (reset + force-push) once that was noticed. Do not commit the real
-  server URL here; set it locally/out of band before cutting a release.
+- `DWMB.Serialization/ServerConfig.cs` is committed with a **placeholder**
+  `ServerUrl` value (`https://example.com`), not the real production URL —
+  this repo is public, and the real URL was briefly committed (as
+  `server_location.txt`, since removed) and then removed from history
+  (reset + force-push) once that was noticed. Do not commit the real server
+  URL here; `.github/workflows/installer.yml` patches it in from the
+  `DWMB_SERVER_URL` repository secret for tagged (`v*`) builds. For a local
+  release build, edit `ServerConfig.cs` locally/out of band, uncommitted.
 - Do not commit `log.txt` or build output (all git-ignored).
 - Commit or push only when explicitly asked.
