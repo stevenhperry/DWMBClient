@@ -84,6 +84,20 @@ don't have a Windows machine handy.
   fails loudly if either secret isn't set, rather than silently shipping the
   placeholder. For a manual/local release build, edit
   `DWMB.Serialization/ServerConfig.cs` locally (uncommitted) before building.
+  **Running `dotnet build`/`dotnet publish` locally without doing that edit
+  first always produces an MSI with the placeholder URLs** — a local build
+  never goes through the CI injection step, there's nothing to "accidentally"
+  skip; the committed placeholder is exactly what gets compiled in. The
+  running client logs the server URL it resolved (and, on a failed
+  registration, the target/HTTP status/response) to `log.txt` at Start, so a
+  placeholder-URL build is now diagnosable after the fact instead of just
+  logging a generic "failed to register" line.
+- The workflow only injects real URLs for `v*` tag pushes; any other trigger
+  (manual `workflow_dispatch`, a push to `master`, a PR) uploads the artifact
+  as `DWMB-AIO-Client-Setup-TESTBUILD-placeholder-urls` instead of
+  `DWMB-AIO-Client-Setup`, and the run's summary says explicitly whether real
+  URLs were injected — so a test build can't be mistaken for (or accidentally
+  distributed as) the real release artifact.
 - Note this only keeps the real URL out of the public repo — it does not
   hide it from anyone who has the installed app. A .NET string constant
   sits in the compiled assembly in plaintext and is trivial to recover with

@@ -30,6 +30,18 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
+      - name: Determine build kind
+        id: buildkind
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}".StartsWith("refs/tags/v")) {
+            "kind=release" >> $env:GITHUB_OUTPUT
+            "artifact_name=DWMB-AIO-Client-Setup" >> $env:GITHUB_OUTPUT
+          } else {
+            "kind=test" >> $env:GITHUB_OUTPUT
+            "artifact_name=DWMB-AIO-Client-Setup-TESTBUILD-placeholder-urls" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Inject production and development server URLs
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -70,9 +82,18 @@ jobs:
           }
           "path=$($msi.FullName)" >> $env:GITHUB_OUTPUT
 
+      - name: Summarize build kind
+        shell: pwsh
+        run: |
+          if ("${{ steps.buildkind.outputs.kind }}" -eq "release") {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "✅ **Release build** — real server URLs were injected from the \`DWMB_SERVER_URL\`/\`DWMB_SERVER_URL_DEV\` repo secrets. Safe to distribute as \`${{ steps.buildkind.outputs.artifact_name }}\`."
+          } else {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "⚠️ **Test build** (not a \`v*\` tag push) — the MSI contains the PLACEHOLDER \`ServerConfig\` URLs (\`https://example.com\`) and will NOT reach the real DWMB server. Do not distribute \`${{ steps.buildkind.outputs.artifact_name }}\` to end users. To publish a real release, push a \`v*\` tag."
+          }
+
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DWMB-AIO-Client-Setup
+          name: ${{ steps.buildkind.outputs.artifact_name }}
           path: ${{ steps.msi.outputs.path }}
           if-no-files-found: error
