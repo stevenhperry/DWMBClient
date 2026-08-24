@@ -15,7 +15,8 @@ using the [WiX Toolset](https://wixtoolset.org/) v7 SDK-style project format.
    see the Npcap section in the main `README.md`.)
 3. Adds Start Menu and Desktop shortcuts to `DWMB.exe`.
 4. Produces `DWMB-AIO-Client-Setup.msi`, versioned to match `DWMB.exe`'s file
-   version (i.e. whatever `<FileVersion>` is set to in `DWMB.csproj`).
+   version (i.e. whatever `<FileVersion>` is set to in `DWMB.csproj` — see
+   **Versioning** below for how that's actually determined for a real release).
 
 The DWMB production and development server URLs are compiled into `DWMB.exe`
 (see `../DWMB.Serialization/ServerConfig.cs`) rather than shipped as a loose
@@ -25,6 +26,22 @@ folder. The app's "Use development server" checkbox (default off) picks
 which of the two compiled-in URLs a session connects to. The committed
 constants hold **placeholders** (`https://example.com`), not real server
 addresses — see Notes below.
+
+## Versioning
+
+For a real release (a `v*` tag push), the CI workflow derives
+`Version`/`AssemblyVersion`/`FileVersion`/`InformationalVersion` from the tag
+itself (`vMAJOR.MINOR.PATCH`, e.g. `v1.2.1` → `1.2.1.0`) and patches them into
+`DWMB.csproj` before building — overwriting whatever's committed there. **The
+tag is the single source of truth for the shipped version; the value
+committed in `DWMB.csproj` is only a local/dev-build default and hand-bumping
+it before tagging has no effect on the release.** This is what
+`AppInfo.DisplayVersion`, the MSI's `ProductVersion` (bound to
+`!(bind.FileVersion.MainExecutable)` in `Package.wxs`), and the version shown
+in Windows' Programs and Features (`appwiz.cpl`) all ultimately read from —
+one source (`FileVersion`), so fixing/deriving it in one place fixes all
+three displays at once. A tag that isn't `vMAJOR.MINOR.PATCH` fails the build
+loudly instead of silently reusing whatever's in `DWMB.csproj`.
 
 ## Building
 

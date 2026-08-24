@@ -42,6 +42,41 @@ jobs:
             "artifact_name=DWMB-AIO-Client-Setup-TESTBUILD-placeholder-urls" >> $env:GITHUB_OUTPUT
           }
 
+      - name: Derive version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        shell: pwsh
+        run: |
+          # Single source of truth for the release version is the pushed tag, not a
+          # hand-maintained number in DWMB.csproj — that's what let the tag and the
+          # compiled-in version drift apart (v1.2.1 tagged, csproj still says 1.2.0.0).
+          # Require vMAJOR.MINOR.PATCH and fail loudly on anything else, rather than
+          # silently building with whatever the committed csproj happens to say.
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(\d+)\.(\d+)\.(\d+)$') {
+            throw "Tag '$tag' is not in the required vMAJOR.MINOR.PATCH format (e.g. v1.2.1). Refusing to guess a version."
+          }
+          $version = "$($Matches[1]).$($Matches[2]).$($Matches[3]).0"
+
+          function Set-CsprojVersionElement {
+            param([string]$Content, [string]$ElementName, [string]$Value)
+            $pattern = "<$ElementName>.*?</$ElementName>"
+            $updated = [regex]::Replace($Content, $pattern, "<$ElementName>$Value</$ElementName>")
+            if ($updated -eq $Content) {
+              throw "Failed to patch DWMB.csproj: <$ElementName> element not found."
+            }
+            return $updated
+          }
+
+          $path = "DWMB.csproj"
+          $content = Get-Content -Path $path -Raw
+          foreach ($el in @("Version", "AssemblyVersion", "FileVersion", "InformationalVersion")) {
+            $content = Set-CsprojVersionElement -Content $content -ElementName $el -Value $version
+          }
+          Set-Content -Path $path -Value $content -NoNewline
+
+          "resolved_version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Inject production and development server URLs
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -86,7 +121,7 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ steps.buildkind.outputs.kind }}" -eq "release") {
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "✅ **Release build** — real server URLs were injected from the \`DWMB_SERVER_URL\`/\`DWMB_SERVER_URL_DEV\` repo secrets. Safe to distribute as \`${{ steps.buildkind.outputs.artifact_name }}\`."
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "✅ **Release build, version ${{ steps.version.outputs.resolved_version }}** — real server URLs were injected from the \`DWMB_SERVER_URL\`/\`DWMB_SERVER_URL_DEV\` repo secrets, and the app/MSI version was derived from tag \`${{ github.ref_name }}\` (not the committed DWMB.csproj value). Safe to distribute as \`${{ steps.buildkind.outputs.artifact_name }}\`."
           } else {
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "⚠️ **Test build** (not a \`v*\` tag push) — the MSI contains the PLACEHOLDER \`ServerConfig\` URLs (\`https://example.com\`) and will NOT reach the real DWMB server. Do not distribute \`${{ steps.buildkind.outputs.artifact_name }}\` to end users. To publish a real release, push a \`v*\` tag."
           }

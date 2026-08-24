@@ -152,7 +152,14 @@ organized into folders that map to sub-namespaces:
   holds it across network I/O. Be careful editing this shared/static lifecycle.
 - **Version numbers** are set in `DWMB.csproj` (`<Version>`, `<AssemblyVersion>`,
   `<FileVersion>`, `<InformationalVersion>`) and surfaced at runtime via
-  `AppInfo.DisplayVersion`, which the UI and `ApiManager` user-agent read.
+  `AppInfo.DisplayVersion`, which the UI and `ApiManager` user-agent read. For a real
+  release, though, the committed values in `DWMB.csproj` don't matter: pushing a `v*`
+  tag makes `.github/workflows/installer.yml` derive all four from the tag
+  (`vMAJOR.MINOR.PATCH`) and patch them in before building, so the tag is the single
+  source of truth — hand-bumping `DWMB.csproj` before tagging has no effect on the
+  release build, and a mismatched tag/csproj version (e.g. tagging `v1.2.1` while
+  `DWMB.csproj` still said `1.2.0.0`) is exactly the bug this exists to prevent. See
+  `Installer/README.md`'s Versioning section for details.
 - **Capture lifecycle:** Stop/Pause unsubscribes the packet handler, closes the
   device, nulls it, and stops the heartbeat, so a later Start re-initializes cleanly
   (capture is restartable). Device selection uses a WPF dialog
