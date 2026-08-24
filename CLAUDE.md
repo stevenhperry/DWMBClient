@@ -190,6 +190,15 @@ Search for `TODO` before assuming a rough edge is a bug.
   commit real server URLs here; `.github/workflows/installer.yml` patches them
   in from the `DWMB_SERVER_URL` and `DWMB_SERVER_URL_DEV` repository secrets
   for tagged (`v*`) builds. For a local release build, edit `ServerConfig.cs`
-  locally/out of band, uncommitted.
+  locally/out of band, uncommitted — a `dotnet build`/`dotnet publish` run
+  without that edit compiles in the committed placeholder, since only the
+  CI workflow's tag-triggered step ever patches it. A non-tag CI run
+  (`workflow_dispatch`, a push to `master`, a PR) uploads the MSI as
+  `DWMB-AIO-Client-Setup-TESTBUILD-placeholder-urls` rather than
+  `DWMB-AIO-Client-Setup`, with the run summary stating whether real URLs
+  were injected, so a placeholder build can't be mistaken for the real
+  release artifact. The client also logs the resolved server URL (and, on a
+  failed registration, the HTTP status/response) to `log.txt` at Start, so a
+  placeholder-URL build is diagnosable after the fact.
 - Do not commit `log.txt` or build output (all git-ignored).
 - Commit or push only when explicitly asked.

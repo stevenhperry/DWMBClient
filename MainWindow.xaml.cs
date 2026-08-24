@@ -372,6 +372,11 @@ namespace DWMB_AIO
                     // then publish callsign + am together so the capture thread never sees a
                     // mismatched (am, callsign) pair (issue #10).
                     ApiManager newAm = new ApiManager(strRegCode, strCallsignInput, environment);
+                    // Log which server this build/session is actually configured to hit.
+                    // Not a secret (already recoverable from the compiled assembly) and
+                    // essential for diagnosing a build that shipped with the ServerConfig
+                    // placeholder URL instead of the real one (issue: silent placeholder builds).
+                    logger.Log($"[INFO] Server configured ({environment}): {newAm.ServerAddress}");
                     lock (stateLock)
                     {
                         callsign = strCallsignInput;
@@ -383,7 +388,7 @@ namespace DWMB_AIO
 
                     if (!newAm.IsRegistered)  //if the registration is not successful
                     {
-                        logger.Log("[DWMB_API_ERROR] - Client failed to register with the server.");
+                        logger.Log("[DWMB_API_ERROR] - Client failed to register with the server. " + (newAm.LastRegistrationError ?? "(no additional detail)"));
                         // Return error instead of showing a MessageBox here so the caller can decide how to present the error.
                         return (false, "Failed to register with the server. Please check your callsign and registration code.");
                     }

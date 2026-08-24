@@ -34,6 +34,23 @@ namespace DWMB_AIO.DWMB.Serialization
         public bool IsRegistered { get; set; } = false;
         public bool IsCapturing { get; set; } = false;
 
+        /// <summary>
+        /// The resolved server base URL this instance talks to (whichever
+        /// <see cref="ServerConfig"/> constant/override <see cref="LoadServerAddress"/>
+        /// picked). Not a secret — the value is already baked into the compiled
+        /// assembly and trivially recoverable from it — so it's safe to surface here
+        /// for logging/diagnostics (e.g. confirming a build didn't ship with the
+        /// placeholder ServerConfig URL).
+        /// </summary>
+        public string ServerAddress => SERVER_ADDRESS;
+
+        /// <summary>
+        /// Details of the most recent failed <see cref="Register"/> call (HTTP status,
+        /// error message, response snippet), for logging. Null when the last call
+        /// succeeded or none has been made yet.
+        /// </summary>
+        public string? LastRegistrationError { get; private set; }
+
 
         [SetsRequiredMembers]
         public ApiManager(string token, string callsign, ServerEnvironment environment = ServerEnvironment.Production)
@@ -170,11 +187,13 @@ namespace DWMB_AIO.DWMB.Serialization
                 if (this.DiscordId == 0)  // why would it be zero?  Discord user not found?
                 {
                     this.IsRegistered = false;
+                    LastRegistrationError = "Registration succeeded but DiscordId was 0 (Discord user not found/linked).";
                     return false;  // registration failed
                 }
                 else
                 {
                     this.IsRegistered = true;
+                    LastRegistrationError = null;
                     // Start sending periodic heartbeats
                     StartHeartbeatTimer();
                     return true; // registration successful
@@ -182,6 +201,14 @@ namespace DWMB_AIO.DWMB.Serialization
             }
             else
             {
+                // Capture enough of the failure to tell "wrong/unreachable server URL"
+                // (e.g. the compiled-in ServerConfig placeholder) apart from "server
+                // reachable but rejected the request" when this ends up in log.txt.
+                string snippet = response.Content ?? string.Empty;
+                if (snippet.Length > 300) snippet = snippet.Substring(0, 300) + "...";
+                LastRegistrationError =
+                    $"Target={SERVER_ADDRESS}{REGISTRATION_ENDPOINT}; HTTP={(int)response.StatusCode} {response.StatusCode}; " +
+                    $"ErrorMessage={response.ErrorMessage}; ResponseSnippet={snippet}";
                 return false; // registration failed
             }
         }
