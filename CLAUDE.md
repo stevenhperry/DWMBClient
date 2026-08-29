@@ -112,6 +112,9 @@ organized into folders that map to sub-namespaces:
     `MessageForwardRequest`).
   - `DWMBApiException` — API error type.
 - **`DWMB.Audio`** — local alarm sound (`AlarmPlayer`, `AlarmWaveProvider`), see below.
+- **`DWMB.Notifications`** — `TaskbarFlasher`, a thin P/Invoke wrapper around Win32
+  `FlashWindowEx` (WPF has no managed equivalent) that flashes the main window's
+  taskbar button, see below.
 - **`DWMB.Diagnostics`** — `Logger`, a minimal file logger. Defaults to
   `%LOCALAPPDATA%\DontWallopMeBro\log.txt` — the exe installs to Program Files,
   which a standard user can't write to, so the log can't live next to it or in
@@ -134,15 +137,18 @@ organized into folders that map to sub-namespaces:
    self-sent messages; forward direct messages to the user and on-frequency
    messages that start with the user's callsign. Duplicate messages within 2
    seconds are dropped.
-6. If not a duplicate, and the alarm-sound checkbox is on, `DWMBClient` triggers
-   the local alarm (`AlarmPlayer.Trigger`) — independent of and before the network
-   call below, so it fires even if forwarding is slow or fails.
+6. If not a duplicate, `DWMBClient` raises `MessageArrived` (flashes the taskbar
+   button via `TaskbarFlasher`, unconditionally) and, if the alarm-sound checkbox
+   is on, triggers the local alarm (`AlarmPlayer.Trigger`) — both independent of
+   and before the network call below, so they fire even if forwarding is slow or
+   fails.
 7. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
 8. **Pause** stops capture; **Deregister** stops capture and calls
-   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding, is left
-   alone by both — it's a local "you have an unacknowledged message" indicator
-   that the user silences on their own via the GUI, not tied to the connection
-   lifecycle.
+   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding, and any
+   in-progress taskbar flash are left alone by both — they're local "you have an
+   unacknowledged message" indicators the user clears on their own (silencing the
+   alarm via the GUI; the flash stops the moment the window is brought to the
+   foreground), not tied to the connection lifecycle.
 
 ## Conventions & gotchas
 
@@ -209,6 +215,18 @@ organized into folders that map to sub-namespaces:
   stack players); unchecking the GUI checkbox also silences an alarm already in
   progress, not just future ones. This is in addition to, not a replacement for,
   the Discord notification — Discord can be muted or backgrounded.
+
+- **Taskbar flash (`DWMB.Notifications`):** always on (no GUI toggle) — unlike the
+  alarm sound, a taskbar flash isn't disruptive, so it doesn't need opt-in.
+  `DWMBClient.MessageArrived` fires for every qualifying message regardless of
+  `AlarmSoundEnabled`; `MainWindow` handles it (marshalling to the UI thread, same
+  pattern as `OnForwardStatusChanged`/`OnAlarmStateChanged`) and calls
+  `TaskbarFlasher.Start` only if `!IsActive` — no point flashing when the user is
+  already looking at the window. `TaskbarFlasher` wraps the Win32 `FlashWindowEx`
+  API (`user32.dll`) with `FLASHW_TIMERNOFG`, which keeps flashing until the
+  window comes to the foreground on its own — so a plain `Window.Activated`
+  handler (subscribed once, in `MainWindow`'s constructor) is enough to stop it;
+  there's no separate flash-count/timer state to track or cancel by hand.
 
 Search for `TODO` before assuming a rough edge is a bug.
 

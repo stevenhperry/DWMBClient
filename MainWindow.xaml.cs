@@ -2,6 +2,7 @@
 using DWMB_AIO.DWMB.Diagnostics;
 using DWMB_AIO.DWMB.FsdDetection;
 using DWMB_AIO.DWMB.FsdObjects;
+using DWMB_AIO.DWMB.Notifications;
 using DWMB_AIO.DWMB.Serialization;
 using SharpPcap;
 using System.Diagnostics;
@@ -33,6 +34,12 @@ namespace DWMB_AIO
             DWMBClient.AlarmStateChanged += OnAlarmStateChanged;
             DWMBClient.AlarmSoundEnabled = chkAlarmSound.IsChecked == true; // off by default
             UpdateAlarmButtonState();
+
+            // Flash the taskbar button for every qualifying message, independent of the
+            // (opt-in, audible) alarm — always on, since it isn't disruptive the way sound
+            // is. Stops as soon as the user brings the window to the foreground.
+            DWMBClient.MessageArrived += OnMessageArrived;
+            Activated += (sender, e) => TaskbarFlasher.Stop(this);
 
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
@@ -292,6 +299,35 @@ namespace DWMB_AIO
             }
         }
 
+        /// <summary>
+        /// Handles <see cref="DWMBClient.MessageArrived"/>, which fires on the capture
+        /// thread — marshal to the UI thread before touching the window (same pattern as
+        /// <see cref="OnForwardStatusChanged"/>, issue #8).
+        /// </summary>
+        private void OnMessageArrived()
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                FlashTaskbarIfInactive();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(FlashTaskbarIfInactive));
+            }
+        }
+
+        /// <summary>
+        /// Flashes the taskbar button, unless the window is already in the foreground (in
+        /// which case the user is already looking at it — nothing to draw attention to).
+        /// </summary>
+        private void FlashTaskbarIfInactive()
+        {
+            if (!IsActive)
+            {
+                TaskbarFlasher.Start(this);
+            }
+        }
+
         private void LockInputs()
         {
             txtCallsign.IsEnabled = false;
@@ -373,6 +409,13 @@ namespace DWMB_AIO
 
         /// <summary>Immediately stops the alarm sound, if it's sounding. Safe to call from the GUI at any time.</summary>
         public static void SilenceAlarm() => alarmPlayer.Silence();
+
+        /// <summary>
+        /// Raised whenever a message qualifies for forwarding (i.e. would trigger the
+        /// alarm), regardless of whether <see cref="AlarmSoundEnabled"/> is on — drives the
+        /// always-on taskbar flash. May fire on the capture thread.
+        /// </summary>
+        public static event Action? MessageArrived;
 
         // --- Message-forwarding health tracking (issue #8) ---
         // Forward failures used to be logged only; a burst (e.g. server unreachable) left
@@ -614,9 +657,18 @@ namespace DWMB_AIO
                             continue; // skip processing this duplicate message
                         }
 
-                        // Local alarm is independent of server forwarding (issue: notify
-                        // even if the network call below fails or is slow) and must never
-                        // take the capture thread down, so failures are logged, not thrown.
+                        // Taskbar flash and local alarm are both independent of server
+                        // forwarding (issue: notify even if the network call below fails or
+                        // is slow) and must never take the capture thread down.
+                        try
+                        {
+                            MessageArrived?.Invoke();
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.Log("[ALERT-ERROR] Failed to raise MessageArrived: " + ex.Message);
+                        }
+
                         if (AlarmSoundEnabled)
                         {
                             try
