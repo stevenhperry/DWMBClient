@@ -111,6 +111,7 @@ organized into folders that map to sub-namespaces:
   - `ApiObjects/` — DTOs (`ForwardedMessage`/`Message`, `ServerRegistrationResponse`,
     `MessageForwardRequest`).
   - `DWMBApiException` — API error type.
+- **`DWMB.Audio`** — local alarm sound (`AlarmPlayer`, `AlarmWaveProvider`), see below.
 - **`DWMB.Diagnostics`** — `Logger`, a minimal file logger. Defaults to
   `%LOCALAPPDATA%\DontWallopMeBro\log.txt` — the exe installs to Program Files,
   which a standard user can't write to, so the log can't live next to it or in
@@ -133,9 +134,15 @@ organized into folders that map to sub-namespaces:
    self-sent messages; forward direct messages to the user and on-frequency
    messages that start with the user's callsign. Duplicate messages within 2
    seconds are dropped.
-6. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
-7. **Pause** stops capture; **Deregister** stops capture and calls
-   `/api/v1/deregister`, then unlocks the inputs.
+6. If not a duplicate, and the alarm-sound checkbox is on, `DWMBClient` triggers
+   the local alarm (`AlarmPlayer.Trigger`) — independent of and before the network
+   call below, so it fires even if forwarding is slow or fails.
+7. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
+8. **Pause** stops capture; **Deregister** stops capture and calls
+   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding, is left
+   alone by both — it's a local "you have an unacknowledged message" indicator
+   that the user silences on their own via the GUI, not tied to the connection
+   lifecycle.
 
 ## Conventions & gotchas
 
@@ -184,6 +191,24 @@ organized into folders that map to sub-namespaces:
   `PcapDriverCheck.IsRunningElevated()` (`WindowsPrincipal.IsInRole(Administrator)`)
   and appends a "try running DWMB as Administrator" hint when the process isn't
   elevated.
+
+- **Alarm sound (`DWMB.Audio`):** off by default, toggled via `chkAlarmSound` on the
+  main window (`DWMBClient.AlarmSoundEnabled`). `AlarmWaveProvider` synthesizes a
+  siren tone in code (no bundled audio asset) as raw 16-bit PCM (`IWaveProvider`,
+  not the float-based `ISampleProvider`, to depend only on NAudio's long-stable core
+  API); volume ramps from quiet to full over ~20s and then holds, so it starts
+  unobtrusive and gets harder to ignore the longer it's unacknowledged.
+  `AlarmPlayer` wraps a NAudio `WaveOutEvent`, which — unlike the older `WaveOut` —
+  drives playback from its own background thread rather than needing a Win32
+  message pump/STA thread, so `Trigger()` is safe to call directly from the
+  SharpPcap capture thread and `Silence()` from the UI thread with no dispatcher
+  marshalling (contrast with `ForwardStatusChanged`/`AlarmStateChanged`
+  themselves, which *do* need marshalling before touching WPF controls — see
+  `OnForwardStatusChanged`/`OnAlarmStateChanged` in `MainWindow`). A second
+  `Trigger()` while already sounding is a no-op (doesn't restart the ramp or
+  stack players); unchecking the GUI checkbox also silences an alarm already in
+  progress, not just future ones. This is in addition to, not a replacement for,
+  the Discord notification — Discord can be muted or backgrounded.
 
 Search for `TODO` before assuming a rough edge is a bug.
 

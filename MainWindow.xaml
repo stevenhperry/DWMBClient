@@ -36,6 +36,30 @@
 		<Label Content="Registration Code" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,125" Grid.ColumnSpan="2"/>
 
 
+		<!-- Local alarm sound: an additional, harder-to-miss alert alongside the Discord
+		     notification (Discord can be muted/backgrounded). Off by default; the alarm
+		     starts quiet and ramps up to full volume the longer it goes unacknowledged.
+		     Unchecking this also silences an alarm already sounding. -->
+		<CheckBox x:Name="chkAlarmSound"
+				  Content="Play alarm sound for new messages"
+				  IsChecked="False"
+				  HorizontalAlignment="Center"
+				  VerticalAlignment="Top"
+				  Margin="0,215,0,0"
+				  Checked="chkAlarmSound_CheckedChanged"
+				  Unchecked="chkAlarmSound_CheckedChanged"
+				  ToolTip="Plays a local alarm sound (starts quiet, gets louder over time) whenever a message is forwarded, in addition to the Discord notification. Off by default." />
+		<Button x:Name="btnSilenceAlarm"
+				Content="Silence Alarm"
+				Width="100"
+				Height="24"
+				HorizontalAlignment="Center"
+				VerticalAlignment="Top"
+				Margin="0,240,0,0"
+				IsEnabled="False"
+				Click="btnSilenceAlarm_Click"
+				ToolTip="Immediately stop the alarm sound." />
+
 		<Expander Name="expAdvanced"
 				  Header="Advanced"
 				  IsExpanded="False"

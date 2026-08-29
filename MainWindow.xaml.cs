@@ -1,4 +1,5 @@
-﻿using DWMB_AIO.DWMB.Diagnostics;
+﻿using DWMB_AIO.DWMB.Audio;
+using DWMB_AIO.DWMB.Diagnostics;
 using DWMB_AIO.DWMB.FsdDetection;
 using DWMB_AIO.DWMB.FsdObjects;
 using DWMB_AIO.DWMB.Serialization;
@@ -7,6 +8,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 
 
@@ -26,6 +28,11 @@ namespace DWMB_AIO
 
             // Surface forwarding failures raised on the capture thread (issue #8).
             DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
+
+            // Keep the Silence button in sync with whether the alarm is actually sounding.
+            DWMBClient.AlarmStateChanged += OnAlarmStateChanged;
+            DWMBClient.AlarmSoundEnabled = chkAlarmSound.IsChecked == true; // off by default
+            UpdateAlarmButtonState();
 
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
@@ -229,6 +236,62 @@ namespace DWMB_AIO
             }
         }
 
+        /// <summary>
+        /// Toggles whether new messages trigger the local alarm sound. Off by default.
+        /// Turning it off also silences an alarm that's already sounding, rather than just
+        /// suppressing future ones.
+        /// </summary>
+        private void chkAlarmSound_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            bool enabled = chkAlarmSound.IsChecked == true;
+            DWMBClient.AlarmSoundEnabled = enabled;
+
+            if (!enabled)
+            {
+                DWMBClient.SilenceAlarm();
+            }
+        }
+
+        private void btnSilenceAlarm_Click(object sender, RoutedEventArgs e)
+        {
+            DWMBClient.SilenceAlarm();
+        }
+
+        /// <summary>
+        /// Handles <see cref="DWMBClient.AlarmStateChanged"/>, which may fire on the capture
+        /// thread — marshal to the UI thread before touching controls (same pattern as
+        /// <see cref="OnForwardStatusChanged"/>, issue #8).
+        /// </summary>
+        private void OnAlarmStateChanged()
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                UpdateAlarmButtonState();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateAlarmButtonState));
+            }
+        }
+
+        /// <summary>Reflects whether the alarm is currently sounding on the Silence button.</summary>
+        private void UpdateAlarmButtonState()
+        {
+            bool sounding = DWMBClient.IsAlarmSounding;
+            btnSilenceAlarm.IsEnabled = sounding;
+
+            if (sounding)
+            {
+                btnSilenceAlarm.Background = new SolidColorBrush(Colors.Firebrick);
+                btnSilenceAlarm.Foreground = new SolidColorBrush(Colors.White);
+            }
+            else
+            {
+                btnSilenceAlarm.ClearValue(Button.BackgroundProperty);
+                btnSilenceAlarm.ClearValue(Button.ForegroundProperty);
+            }
+        }
+
         private void LockInputs()
         {
             txtCallsign.IsEnabled = false;
@@ -293,6 +356,23 @@ namespace DWMB_AIO
 
         public static bool IsCapturing { get; set; } = false;
         public static bool? IsRegistered => am?.IsRegistered;
+
+        // --- Local alarm sound (in addition to the Discord notification) ---
+        // Off by default; toggled from the GUI (chkAlarmSound). A single AlarmPlayer
+        // instance for the process lifetime, same pattern as the static `logger`.
+        static readonly AlarmPlayer alarmPlayer = new();
+        public static bool AlarmSoundEnabled { get; set; } = false;
+        public static bool IsAlarmSounding => alarmPlayer.IsSounding;
+
+        /// <summary>Raised whenever the alarm starts/stops sounding. May fire off the UI thread.</summary>
+        public static event Action? AlarmStateChanged
+        {
+            add => alarmPlayer.StateChanged += value;
+            remove => alarmPlayer.StateChanged -= value;
+        }
+
+        /// <summary>Immediately stops the alarm sound, if it's sounding. Safe to call from the GUI at any time.</summary>
+        public static void SilenceAlarm() => alarmPlayer.Silence();
 
         // --- Message-forwarding health tracking (issue #8) ---
         // Forward failures used to be logged only; a burst (e.g. server unreachable) left
@@ -532,6 +612,21 @@ namespace DWMB_AIO
                         {
                             logger.Log("Duplicate message detected within 2 seconds.  Ignoring.");
                             continue; // skip processing this duplicate message
+                        }
+
+                        // Local alarm is independent of server forwarding (issue: notify
+                        // even if the network call below fails or is slow) and must never
+                        // take the capture thread down, so failures are logged, not thrown.
+                        if (AlarmSoundEnabled)
+                        {
+                            try
+                            {
+                                alarmPlayer.Trigger();
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.Log("[ALARM-ERROR] Failed to play alarm sound: " + ex.Message);
+                            }
                         }
 
                         string loggingString = String.Format("{0} > {1} ({2}):\"{3}\" ",
