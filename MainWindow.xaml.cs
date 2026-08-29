@@ -30,16 +30,13 @@ namespace DWMB_AIO
             // Surface forwarding failures raised on the capture thread (issue #8).
             DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
 
-            // Keep the Silence button in sync with whether the alarm is actually sounding.
+            // Keep the Silence button and taskbar flash in sync with whether the alarm is
+            // actually sounding — the flash is tied entirely to the alarm's own start/stop,
+            // not raised independently, so it only happens when the (opt-in) alarm sound
+            // does, and stops the moment the alarm is silenced.
             DWMBClient.AlarmStateChanged += OnAlarmStateChanged;
             DWMBClient.AlarmSoundEnabled = chkAlarmSound.IsChecked == true; // off by default
-            UpdateAlarmButtonState();
-
-            // Flash the taskbar button for every qualifying message, independent of the
-            // (opt-in, audible) alarm — always on, since it isn't disruptive the way sound
-            // is. Stops as soon as the user brings the window to the foreground.
-            DWMBClient.MessageArrived += OnMessageArrived;
-            Activated += (sender, e) => TaskbarFlasher.Stop(this);
+            SyncAlarmUi();
 
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
@@ -273,16 +270,21 @@ namespace DWMB_AIO
         {
             if (Dispatcher.CheckAccess())
             {
-                UpdateAlarmButtonState();
+                SyncAlarmUi();
             }
             else
             {
-                Dispatcher.BeginInvoke(new Action(UpdateAlarmButtonState));
+                Dispatcher.BeginInvoke(new Action(SyncAlarmUi));
             }
         }
 
-        /// <summary>Reflects whether the alarm is currently sounding on the Silence button.</summary>
-        private void UpdateAlarmButtonState()
+        /// <summary>
+        /// Reflects whether the alarm is currently sounding on the Silence button and the
+        /// taskbar flash. The flash is driven entirely by this — not raised independently
+        /// on every message — so it only starts when the (opt-in) audible alarm actually
+        /// triggers, and stops the moment the alarm is silenced.
+        /// </summary>
+        private void SyncAlarmUi()
         {
             bool sounding = DWMBClient.IsAlarmSounding;
             btnSilenceAlarm.IsEnabled = sounding;
@@ -291,40 +293,18 @@ namespace DWMB_AIO
             {
                 btnSilenceAlarm.Background = new SolidColorBrush(Colors.Firebrick);
                 btnSilenceAlarm.Foreground = new SolidColorBrush(Colors.White);
+
+                // No point flashing if the user is already looking at the window.
+                if (!IsActive)
+                {
+                    TaskbarFlasher.Start(this);
+                }
             }
             else
             {
                 btnSilenceAlarm.ClearValue(Button.BackgroundProperty);
                 btnSilenceAlarm.ClearValue(Button.ForegroundProperty);
-            }
-        }
-
-        /// <summary>
-        /// Handles <see cref="DWMBClient.MessageArrived"/>, which fires on the capture
-        /// thread — marshal to the UI thread before touching the window (same pattern as
-        /// <see cref="OnForwardStatusChanged"/>, issue #8).
-        /// </summary>
-        private void OnMessageArrived()
-        {
-            if (Dispatcher.CheckAccess())
-            {
-                FlashTaskbarIfInactive();
-            }
-            else
-            {
-                Dispatcher.BeginInvoke(new Action(FlashTaskbarIfInactive));
-            }
-        }
-
-        /// <summary>
-        /// Flashes the taskbar button, unless the window is already in the foreground (in
-        /// which case the user is already looking at it — nothing to draw attention to).
-        /// </summary>
-        private void FlashTaskbarIfInactive()
-        {
-            if (!IsActive)
-            {
-                TaskbarFlasher.Start(this);
+                TaskbarFlasher.Stop(this);
             }
         }
 
@@ -409,13 +389,6 @@ namespace DWMB_AIO
 
         /// <summary>Immediately stops the alarm sound, if it's sounding. Safe to call from the GUI at any time.</summary>
         public static void SilenceAlarm() => alarmPlayer.Silence();
-
-        /// <summary>
-        /// Raised whenever a message qualifies for forwarding (i.e. would trigger the
-        /// alarm), regardless of whether <see cref="AlarmSoundEnabled"/> is on — drives the
-        /// always-on taskbar flash. May fire on the capture thread.
-        /// </summary>
-        public static event Action? MessageArrived;
 
         // --- Message-forwarding health tracking (issue #8) ---
         // Forward failures used to be logged only; a burst (e.g. server unreachable) left
@@ -657,18 +630,10 @@ namespace DWMB_AIO
                             continue; // skip processing this duplicate message
                         }
 
-                        // Taskbar flash and local alarm are both independent of server
-                        // forwarding (issue: notify even if the network call below fails or
-                        // is slow) and must never take the capture thread down.
-                        try
-                        {
-                            MessageArrived?.Invoke();
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.Log("[ALERT-ERROR] Failed to raise MessageArrived: " + ex.Message);
-                        }
-
+                        // Local alarm (which also drives the taskbar flash via
+                        // AlarmStateChanged, see MainWindow.SyncAlarmUi) is independent of
+                        // server forwarding (issue: notify even if the network call below
+                        // fails or is slow) and must never take the capture thread down.
                         if (AlarmSoundEnabled)
                         {
                             try

@@ -137,18 +137,18 @@ organized into folders that map to sub-namespaces:
    self-sent messages; forward direct messages to the user and on-frequency
    messages that start with the user's callsign. Duplicate messages within 2
    seconds are dropped.
-6. If not a duplicate, `DWMBClient` raises `MessageArrived` (flashes the taskbar
-   button via `TaskbarFlasher`, unconditionally) and, if the alarm-sound checkbox
-   is on, triggers the local alarm (`AlarmPlayer.Trigger`) — both independent of
-   and before the network call below, so they fire even if forwarding is slow or
-   fails.
+6. If not a duplicate, and the alarm-sound checkbox is on, `DWMBClient` triggers
+   the local alarm (`AlarmPlayer.Trigger`) — independent of and before the network
+   call below, so it fires even if forwarding is slow or fails. The taskbar flash
+   is not raised independently here; it rides along on the alarm's own
+   `AlarmStateChanged` event (see `DWMB.Notifications` below), so it only happens
+   when the alarm sound does.
 7. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
 8. **Pause** stops capture; **Deregister** stops capture and calls
-   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding, and any
-   in-progress taskbar flash are left alone by both — they're local "you have an
-   unacknowledged message" indicators the user clears on their own (silencing the
-   alarm via the GUI; the flash stops the moment the window is brought to the
-   foreground), not tied to the connection lifecycle.
+   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding (and by
+   extension any in-progress taskbar flash), is left alone by both — it's a local
+   "you have an unacknowledged message" indicator the user silences on their own
+   via the GUI, not tied to the connection lifecycle.
 
 ## Conventions & gotchas
 
@@ -216,17 +216,20 @@ organized into folders that map to sub-namespaces:
   progress, not just future ones. This is in addition to, not a replacement for,
   the Discord notification — Discord can be muted or backgrounded.
 
-- **Taskbar flash (`DWMB.Notifications`):** always on (no GUI toggle) — unlike the
-  alarm sound, a taskbar flash isn't disruptive, so it doesn't need opt-in.
-  `DWMBClient.MessageArrived` fires for every qualifying message regardless of
-  `AlarmSoundEnabled`; `MainWindow` handles it (marshalling to the UI thread, same
-  pattern as `OnForwardStatusChanged`/`OnAlarmStateChanged`) and calls
-  `TaskbarFlasher.Start` only if `!IsActive` — no point flashing when the user is
-  already looking at the window. `TaskbarFlasher` wraps the Win32 `FlashWindowEx`
-  API (`user32.dll`) with `FLASHW_TIMERNOFG`, which keeps flashing until the
-  window comes to the foreground on its own — so a plain `Window.Activated`
-  handler (subscribed once, in `MainWindow`'s constructor) is enough to stop it;
-  there's no separate flash-count/timer state to track or cancel by hand.
+- **Taskbar flash (`DWMB.Notifications`):** no separate GUI toggle — it rides
+  entirely on the alarm sound's own lifecycle rather than being raised
+  independently per message, so it only starts when the (opt-in) alarm actually
+  triggers, and stops the moment the alarm is silenced. `MainWindow.SyncAlarmUi`
+  is the single place both are driven from: it's called from `OnAlarmStateChanged`
+  (the `DWMBClient.AlarmStateChanged` handler, marshalled to the UI thread same as
+  `OnForwardStatusChanged`), and flashes only if `DWMBClient.IsAlarmSounding` is
+  true *and* `!IsActive` (no point flashing when the user is already looking at
+  the window) — otherwise it calls `TaskbarFlasher.Stop`. `TaskbarFlasher` wraps
+  the Win32 `FlashWindowEx` API (`user32.dll`); note `FLASHW_TIMERNOFG` will also
+  stop the flash on its own once the window reaches the foreground even before
+  the alarm is silenced (a Windows behavior, not something this app tracks) —
+  `SyncAlarmUi`'s explicit `Stop` call is what ties the *silencing* case to the
+  flash specifically.
 
 Search for `TODO` before assuming a rough edge is a bug.
 
