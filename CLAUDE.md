@@ -199,12 +199,15 @@ organized into folders that map to sub-namespaces:
   elevated.
 
 - **Alarm sound (`DWMB.Audio`):** off by default, toggled via `chkAlarmSound` on the
-  main window (`DWMBClient.AlarmSoundEnabled`). `AlarmWaveProvider` synthesizes a
-  siren tone in code (no bundled audio asset) as raw 16-bit PCM (`IWaveProvider`,
-  not the float-based `ISampleProvider`, to depend only on NAudio's long-stable core
-  API); volume ramps from quiet to full over ~20s and then holds, so it starts
-  unobtrusive and gets harder to ignore the longer it's unacknowledged.
-  `AlarmPlayer` wraps a NAudio `WaveOutEvent`, which — unlike the older `WaveOut` —
+  main window (`DWMBClient.AlarmSoundEnabled`). `AlarmWaveProvider` synthesizes the
+  tone in code (no bundled audio asset) as raw 16-bit PCM (`IWaveProvider`, not the
+  float-based `ISampleProvider`, to depend only on NAudio's long-stable core API),
+  in three phases timed from `Trigger()`: a sweeping siren ramping 5%→100% volume
+  over the first 30s, held at 100% from 30–60s, then (past 60s) a deliberately
+  harsher fixed-pitch tone gated into rapid beeps — at 100% continuously — so an
+  alarm that's gone unacknowledged for a full minute sounds unmistakably more
+  urgent than one that just started. `AlarmPlayer` wraps a NAudio `WaveOutEvent`,
+  which — unlike the older `WaveOut` —
   drives playback from its own background thread rather than needing a Win32
   message pump/STA thread, so `Trigger()` is safe to call directly from the
   SharpPcap capture thread and `Silence()` from the UI thread with no dispatcher
