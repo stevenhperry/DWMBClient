@@ -6,13 +6,13 @@
         xmlns:local="clr-namespace:DWMB_AIO"
         mc:Ignorable="d"
         Title="DWMB" Width="600" Icon="/DWMB32.png" Height="400">
-	<Grid Background="WhiteSmoke">
-		<!-- Header -->
-		<TextBlock Text="DWMB" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="50,50,0,0" Grid.Column="1"/>
-		<TextBlock Text="Don't Wallop Me Bro" FontSize="18" FontStyle="italic"  HorizontalAlignment="Center" VerticalAlignment="Top" Margin="50,100,0,0" Grid.Column="1"/>
-		<Image HorizontalAlignment="Left" VerticalAlignment="Top" Height="200" Width="200" Margin="10,10,0,0" Source="/DWMB AutoPilot Icon.png"/>
-		<TextBlock Text="Buy me a cup of coffee?" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,50,10,0"/>
-		<Button x:Name="KofiButton"
+    <Grid Background="WhiteSmoke">
+        <!-- Header -->
+        <TextBlock Text="DWMB" FontSize="36" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="270,31,0,0"/>
+        <TextBlock Text="Don't Wallop Me Bro" FontSize="18" FontStyle="italic"  HorizontalAlignment="Left" VerticalAlignment="Top" Margin="244,81,0,0"/>
+        <Image HorizontalAlignment="Left" VerticalAlignment="Top" Height="200" Width="200" Margin="10,10,0,0" Source="/DWMB AutoPilot Icon.png"/>
+        <TextBlock Text="Buy me a cup of coffee?" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,50,10,0"/>
+        <Button x:Name="KofiButton"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"
                 Margin="0,70,10,0"
@@ -23,89 +23,88 @@
                 BorderThickness="0"
                 Cursor="Hand"
                 ToolTip="Open my Ko‑fi page">
-			<Image Source="/kofi_qrcode.png" Stretch="Uniform"/>
-		</Button>
+            <Image Source="/kofi_qrcode.png" Stretch="Uniform"/>
+        </Button>
 
-		<!-- Input Fields -->
-		<TextBox Name="txtCallsign" Width="100" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,100" Grid.ColumnSpan="2"/>
-		<Label Content="Callsign" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,125" Grid.ColumnSpan="2"/>
-		<!-- Registration code is intentionally a plain (unmasked) TextBox: the code is a
+        <!-- Input Fields -->
+        <TextBox Name="txtCallsign" Width="100" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,100" Grid.ColumnSpan="2"/>
+        <Label Content="Callsign" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-350,0,0,125" Grid.ColumnSpan="2"/>
+        <!-- Registration code is intentionally a plain (unmasked) TextBox: the code is a
              disposable per-session token already shown to the user in Discord, so masking
              adds little and hurts usability (issue #13). -->
-		<TextBox Name="txtRegCode" Width="325" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,100" Grid.ColumnSpan="2"/>
-		<Label Content="Registration Code" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,125" Grid.ColumnSpan="2"/>
+        <TextBox Name="txtRegCode" Width="325" Height="20" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,100" Grid.ColumnSpan="2"/>
+        <Label Content="Registration Code" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,125" Grid.ColumnSpan="2"/>
 
 
-		<!-- Local alarm sound: an additional, harder-to-miss alert alongside the Discord
+        <!-- Local alarm sound: an additional, harder-to-miss alert alongside the Discord
 		     notification (Discord can be muted/backgrounded). Off by default; the alarm
 		     starts quiet and ramps up to full volume the longer it goes unacknowledged.
 		     Unchecking this also silences an alarm already sounding. -->
-		<CheckBox x:Name="chkAlarmSound"
-				  Content="Play alarm sound for new messages"
+        <CheckBox x:Name="chkAlarmSound"
+				  Content="Play alarm on PC for new messages"
 				  IsChecked="False"
 				  HorizontalAlignment="Center"
-				  VerticalAlignment="Top"
-				  Margin="0,215,0,0"
+				  VerticalAlignment="Center"
+				  Margin="50,0,0,75"
 				  Checked="chkAlarmSound_CheckedChanged"
 				  Unchecked="chkAlarmSound_CheckedChanged"
 				  ToolTip="Plays a local alarm sound (starts quiet, gets louder over time) whenever a message is forwarded, in addition to the Discord notification. Off by default." />
-		<Button x:Name="btnSilenceAlarm"
+        <Button x:Name="btnSilenceAlarm"
 				Content="Silence Alarm"
-				Width="100"
-				Height="24"
+				Width="206"
+				Height="42"
 				HorizontalAlignment="Center"
-				VerticalAlignment="Top"
-				Margin="0,240,0,0"
+				VerticalAlignment="Center"
 				IsEnabled="False"
 				Click="btnSilenceAlarm_Click"
-				ToolTip="Immediately stop the alarm sound." />
+				ToolTip="Immediately stop the alarm sound." Margin="50,0,0,0" />
 
-		<Expander Name="expAdvanced"
+        <Expander Name="expAdvanced"
 				  Header="Advanced"
 				  IsExpanded="False"
 				  HorizontalAlignment="Right"
 				  VerticalAlignment="Top" Width="150" Height="60" Margin="0,0,0,0" FontSize="9" RenderTransformOrigin="0.5,0.5"
 				  >
-			<StackPanel>
-				<Label Content="For use by testing team only."
+            <StackPanel>
+                <Label Content="For use by testing team only."
 					   Padding="1"
 					   />
-				<!-- Server environment toggle. Defaults to unchecked (Production). Disabled while
+                <!-- Server environment toggle. Defaults to unchecked (Production). Disabled while
 				registered/capturing so the target server can't change out from under an active
 				connection (see LockInputs/UnlockInputs). -->
-				<CheckBox x:Name="chkUseDevServer"
+                <CheckBox x:Name="chkUseDevServer"
 						  Content="Use test server"
 						  IsChecked="False"
 						  ToolTip="Route messages to the DWMB development server instead of production. Cannot be changed while connected."
 						  />
-				<!-- Server environment toggle. Defaults to unchecked (Production). Disabled while
+                <!-- Server environment toggle. Defaults to unchecked (Production). Disabled while
 				registered/capturing so the target server can't change out from under an active
 				connection (see LockInputs/UnlockInputs). -->
-				
-			</StackPanel>
-		</Expander>
+
+            </StackPanel>
+        </Expander>
 
 
-		<!-- Buttons -->
-		<Button Name="btnStart" Content="Start" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-300,0,0,40" Click="btnStart_Click" Grid.ColumnSpan="2" ToolTip="Register and start forwarding!"/>
-		<Button Name="btnStop" Content="Pause" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,40" Click="btnStop_Click" Grid.Column="1" ToolTip="Pause / stop capturing and forwarding."/>
-		<Button Name="btnDeregister" Content="Deregister" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="+300,0,0,40" Click="btnDeregister_Click" Grid.ColumnSpan="2" ToolTip="Disconnect from the bot."/>
-		<!-- Test button for debugging purposes -->
-		<!--
+        <!-- Buttons -->
+        <Button Name="btnStart" Content="Start" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="-300,0,0,40" Click="btnStart_Click" Grid.ColumnSpan="2" ToolTip="Register and start forwarding!"/>
+        <Button Name="btnStop" Content="Pause" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,40" Click="btnStop_Click" Grid.Column="1" ToolTip="Pause / stop capturing and forwarding."/>
+        <Button Name="btnDeregister" Content="Deregister" Width="100" Height="40" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="+300,0,0,40" Click="btnDeregister_Click" Grid.ColumnSpan="2" ToolTip="Disconnect from the bot."/>
+        <!-- Test button for debugging purposes -->
+        <!--
         <Button Name="btnTest" Content="Server Test" Width="75" Height="20" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,5,5" Click="btnTest_Click" Grid.ColumnSpan="2" ToolTip="Run a simple test."/>
         -->
 
 
 
-		<!-- Status Box -->
-		<TextBox Name="txtStatusRegister" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="300,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing registration status." FontSize="10" />
-		<TextBox Name="txtStatusCapture" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="-300,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing forwarding status." FontSize="10"/>
-		<!-- Message-forwarding health indicator (issue #8): turns red if forwarding to the
+        <!-- Status Box -->
+        <TextBox Name="txtStatusRegister" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="300,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing registration status." FontSize="10" />
+        <TextBox Name="txtStatusCapture" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="-300,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing forwarding status." FontSize="10"/>
+        <!-- Message-forwarding health indicator (issue #8): turns red if forwarding to the
              server fails, so silently-dropped messages don't go unnoticed. -->
-		<TextBox Name="txtStatusForward" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="000,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing message-forwarding health." FontSize="10"/>
+        <TextBox Name="txtStatusForward" Width="150" Height="18" HorizontalAlignment="Center" VerticalAlignment="Bottom" VerticalScrollBarVisibility="Hidden" IsReadOnly="True" Grid.ColumnSpan="2" Margin="000,0,0,0" Background="#FFDDDDDD" ToolTip="Read only field showing message-forwarding health." FontSize="10"/>
 
-		<!-- Version box (now pulls from assembly attributes generated from the csproj) -->
-		<Label Name="labelVersion" Content="{x:Static local:AppInfo.DisplayVersion}" ContentStringFormat="v {0}" HorizontalAlignment="Left" VerticalAlignment="Bottom" FontSize="8"/>
+        <!-- Version box (now pulls from assembly attributes generated from the csproj) -->
+        <Label Name="labelVersion" Content="{x:Static local:AppInfo.DisplayVersion}" ContentStringFormat="v {0}" HorizontalAlignment="Left" VerticalAlignment="Bottom" FontSize="8"/>
 
-	</Grid>
+    </Grid>
 </Window>
