@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 
 
@@ -240,6 +241,26 @@ namespace DWMB_AIO
             }
         }
 
+        // Silence button colors for the "Disarmed"/"Set" states (the "Sounding" state
+        // alternates between AlarmSoundingBrush and Brushes.Transparent — see
+        // AlarmFlashTimer_Tick). Frozen so they're cheap to reuse on every UI update.
+        private static readonly SolidColorBrush AlarmDisarmedBrush = FrozenBrush(0xFF, 0xC1, 0x07); // cautionary amber/yellow
+        private static readonly SolidColorBrush AlarmSetBrush = FrozenBrush(0x6B, 0x8E, 0x5A); // muted green
+        private static readonly SolidColorBrush AlarmSoundingBrush = FrozenBrush(0xE5, 0x39, 0x35); // alert red
+
+        private static SolidColorBrush FrozenBrush(byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+            brush.Freeze();
+            return brush;
+        }
+
+        // Drives the Silence button's red/transparent blink while the alarm is sounding.
+        // Only running while sounding — started/stopped in SyncAlarmUi, never left ticking
+        // in the other two states.
+        private DispatcherTimer? alarmFlashTimer;
+        private bool alarmFlashRedPhase;
+
         /// <summary>
         /// Toggles whether new messages trigger the local alarm sound. Off by default.
         /// Turning it off also silences an alarm that's already sounding, rather than just
@@ -254,6 +275,12 @@ namespace DWMB_AIO
             {
                 DWMBClient.SilenceAlarm();
             }
+
+            // SilenceAlarm() above only raises AlarmStateChanged (and so re-syncs the UI)
+            // when it actually stops a sounding alarm. Flipping the checkbox while nothing
+            // is sounding — e.g. arming/disarming ahead of time — needs its own sync so the
+            // button still switches between "Disarmed" and "Set".
+            SyncAlarmUi();
         }
 
         private void btnSilenceAlarm_Click(object sender, RoutedEventArgs e)
@@ -279,22 +306,42 @@ namespace DWMB_AIO
         }
 
         /// <summary>
-        /// Reflects whether the alarm is currently sounding on the Silence button and the
-        /// taskbar flash. The flash is driven entirely by this — not raised independently
-        /// on every message — so it only starts when the (opt-in) audible alarm actually
-        /// triggers, and stops the moment the alarm is silenced.
+        /// Reflects the alarm's state — disarmed / armed-but-quiet / sounding — on the
+        /// Silence button's text and color, and drives the taskbar flash (only raised while
+        /// sounding, never independently per message, so it tracks the alarm exactly).
+        /// The button stays enabled in all three states — including when a click would be a
+        /// no-op (SilenceAlarm() no-ops if nothing is sounding) — because WPF's default
+        /// disabled-button style would otherwise paint over these custom colors, and the
+        /// button's color is itself the point in the Disarmed/Set states.
         /// </summary>
         private void SyncAlarmUi()
         {
+            bool enabled = DWMBClient.AlarmSoundEnabled;
             bool sounding = DWMBClient.IsAlarmSounding;
-            btnSilenceAlarm.IsEnabled = sounding;
+
+            if (!enabled)
+            {
+                StopAlarmButtonFlash();
+                btnSilenceAlarm.Content = "Alarm - Disarmed";
+                btnSilenceAlarm.Background = AlarmDisarmedBrush;
+                btnSilenceAlarm.Foreground = Brushes.Black;
+            }
+            else if (!sounding)
+            {
+                StopAlarmButtonFlash();
+                btnSilenceAlarm.Content = "Alarm - Set";
+                btnSilenceAlarm.Background = AlarmSetBrush;
+                btnSilenceAlarm.Foreground = Brushes.White;
+            }
+            else
+            {
+                btnSilenceAlarm.Content = "Silence Alarm";
+                StartAlarmButtonFlash();
+            }
 
             if (sounding)
             {
-                btnSilenceAlarm.Background = new SolidColorBrush(Colors.Firebrick);
-                btnSilenceAlarm.Foreground = new SolidColorBrush(Colors.White);
-
-                // No point flashing if the user is already looking at the window.
+                // No point flashing the taskbar if the user is already looking at the window.
                 if (!IsActive)
                 {
                     TaskbarFlasher.Start(this);
@@ -302,10 +349,48 @@ namespace DWMB_AIO
             }
             else
             {
-                btnSilenceAlarm.ClearValue(Button.BackgroundProperty);
-                btnSilenceAlarm.ClearValue(Button.ForegroundProperty);
                 TaskbarFlasher.Stop(this);
             }
+        }
+
+        /// <summary>Starts the Silence button's red/transparent 1 Hz blink. Safe to call repeatedly.</summary>
+        private void StartAlarmButtonFlash()
+        {
+            if (alarmFlashTimer != null)
+            {
+                return; // already flashing — don't reset the phase
+            }
+
+            alarmFlashRedPhase = true;
+            btnSilenceAlarm.Background = AlarmSoundingBrush;
+            btnSilenceAlarm.Foreground = Brushes.White;
+
+            alarmFlashTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500), // half-period of a 1 Hz alternation
+            };
+            alarmFlashTimer.Tick += AlarmFlashTimer_Tick;
+            alarmFlashTimer.Start();
+        }
+
+        private void AlarmFlashTimer_Tick(object? sender, EventArgs e)
+        {
+            alarmFlashRedPhase = !alarmFlashRedPhase;
+            btnSilenceAlarm.Background = alarmFlashRedPhase ? AlarmSoundingBrush : Brushes.Transparent;
+            btnSilenceAlarm.Foreground = alarmFlashRedPhase ? Brushes.White : Brushes.Black;
+        }
+
+        /// <summary>Stops the blink, if running. Safe to call when it's not.</summary>
+        private void StopAlarmButtonFlash()
+        {
+            if (alarmFlashTimer == null)
+            {
+                return;
+            }
+
+            alarmFlashTimer.Stop();
+            alarmFlashTimer.Tick -= AlarmFlashTimer_Tick;
+            alarmFlashTimer = null;
         }
 
         private void LockInputs()

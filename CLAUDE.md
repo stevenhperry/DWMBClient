@@ -234,6 +234,23 @@ organized into folders that map to sub-namespaces:
   `SyncAlarmUi`'s explicit `Stop` call is what ties the *silencing* case to the
   flash specifically.
 
+- **Silence button as a status readout:** `btnSilenceAlarm`'s text/color are set
+  entirely from code in `SyncAlarmUi` (there's no XAML default beyond the initial
+  "Silence Alarm" text, immediately overwritten at startup) and reflect three
+  states: checkbox unchecked → "Alarm - Disarmed" / cautionary amber; checked but
+  not sounding → "Alarm - Set" / muted green; sounding → "Silence Alarm",
+  blinking red/transparent at 1Hz via `alarmFlashTimer` (a `DispatcherTimer`
+  ticking every 500ms — half the blink period — started/stopped in `SyncAlarmUi`
+  so it's never left running outside the sounding state). The button stays
+  `IsEnabled=true` in all three states, even though a click while not sounding is
+  a no-op (`AlarmPlayer.Silence()` no-ops when nothing's playing) — WPF's default
+  disabled-button style overrides a custom `Background` in most themes, which
+  would otherwise hide the amber/green coloring entirely. Because `SyncAlarmUi`
+  only runs from `AlarmStateChanged` (which doesn't fire from toggling the
+  checkbox alone, only from `AlarmPlayer` actually starting/stopping),
+  `chkAlarmSound_CheckedChanged` also calls `SyncAlarmUi()` directly — otherwise
+  arming/disarming while quiet wouldn't visibly update the button.
+
 Search for `TODO` before assuming a rough edge is a bug.
 
 ## Git

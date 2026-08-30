@@ -49,13 +49,18 @@
 				  Checked="chkAlarmSound_CheckedChanged"
 				  Unchecked="chkAlarmSound_CheckedChanged"
 				  ToolTip="Plays a local alarm sound (starts quiet, gets louder over time) whenever a message is forwarded, in addition to the Discord notification. Off by default." />
+        <!-- Doubles as a status readout — text/color set entirely in code
+		     (MainWindow.SyncAlarmUi) from the checkbox + alarm state: cautionary yellow
+		     "Alarm - Disarmed" when unchecked, muted green "Alarm - Set" when checked but
+		     quiet, and a red/transparent 1Hz blink reading "Silence Alarm" while sounding.
+		     Stays enabled in all three states so those colors always render (a disabled
+		     WPF button paints over a custom Background in most themes). -->
         <Button x:Name="btnSilenceAlarm"
 				Content="Silence Alarm"
 				Width="206"
 				Height="42"
 				HorizontalAlignment="Center"
 				VerticalAlignment="Center"
-				IsEnabled="False"
 				Click="btnSilenceAlarm_Click"
 				ToolTip="Immediately stop the alarm sound." Margin="50,0,0,0" />
 
