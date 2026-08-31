@@ -1,13 +1,17 @@
-﻿using DWMB_AIO.DWMB.Diagnostics;
+﻿using DWMB_AIO.DWMB.Audio;
+using DWMB_AIO.DWMB.Diagnostics;
 using DWMB_AIO.DWMB.FsdDetection;
 using DWMB_AIO.DWMB.FsdObjects;
+using DWMB_AIO.DWMB.Notifications;
 using DWMB_AIO.DWMB.Serialization;
 using SharpPcap;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 
 
@@ -26,6 +30,14 @@ namespace DWMB_AIO
 
             // Surface forwarding failures raised on the capture thread (issue #8).
             DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
+
+            // Keep the Silence button and taskbar flash in sync with whether the alarm is
+            // actually sounding — the flash is tied entirely to the alarm's own start/stop,
+            // not raised independently, so it only happens when the (opt-in) alarm sound
+            // does, and stops the moment the alarm is silenced.
+            DWMBClient.AlarmStateChanged += OnAlarmStateChanged;
+            DWMBClient.AlarmSoundEnabled = chkAlarmSound.IsChecked == true; // off by default
+            SyncAlarmUi();
 
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
@@ -229,6 +241,158 @@ namespace DWMB_AIO
             }
         }
 
+        // Silence button colors for the "Disarmed"/"Set" states (the "Sounding" state
+        // alternates between AlarmSoundingBrush and Brushes.Transparent — see
+        // AlarmFlashTimer_Tick). Frozen so they're cheap to reuse on every UI update.
+        private static readonly SolidColorBrush AlarmDisarmedBrush = FrozenBrush(0xFF, 0xC1, 0x07); // cautionary amber/yellow
+        private static readonly SolidColorBrush AlarmSetBrush = FrozenBrush(0x6B, 0x8E, 0x5A); // muted green
+        private static readonly SolidColorBrush AlarmSoundingBrush = FrozenBrush(0xE5, 0x39, 0x35); // alert red
+
+        private static SolidColorBrush FrozenBrush(byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+            brush.Freeze();
+            return brush;
+        }
+
+        // Drives the Silence button's red/transparent blink while the alarm is sounding.
+        // Only running while sounding — started/stopped in SyncAlarmUi, never left ticking
+        // in the other two states.
+        private DispatcherTimer? alarmFlashTimer;
+        private bool alarmFlashRedPhase;
+
+        /// <summary>
+        /// Toggles whether new messages trigger the local alarm sound. Off by default.
+        /// Turning it off also silences an alarm that's already sounding, rather than just
+        /// suppressing future ones.
+        /// </summary>
+        private void chkAlarmSound_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            bool enabled = chkAlarmSound.IsChecked == true;
+            DWMBClient.AlarmSoundEnabled = enabled;
+
+            if (!enabled)
+            {
+                DWMBClient.SilenceAlarm();
+            }
+
+            // SilenceAlarm() above only raises AlarmStateChanged (and so re-syncs the UI)
+            // when it actually stops a sounding alarm. Flipping the checkbox while nothing
+            // is sounding — e.g. arming/disarming ahead of time — needs its own sync so the
+            // button still switches between "Disarmed" and "Set".
+            SyncAlarmUi();
+        }
+
+        private void btnSilenceAlarm_Click(object sender, RoutedEventArgs e)
+        {
+            DWMBClient.SilenceAlarm();
+        }
+
+        /// <summary>
+        /// Handles <see cref="DWMBClient.AlarmStateChanged"/>, which may fire on the capture
+        /// thread — marshal to the UI thread before touching controls (same pattern as
+        /// <see cref="OnForwardStatusChanged"/>, issue #8).
+        /// </summary>
+        private void OnAlarmStateChanged()
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                SyncAlarmUi();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(SyncAlarmUi));
+            }
+        }
+
+        /// <summary>
+        /// Reflects the alarm's state — disarmed / armed-but-quiet / sounding — on the
+        /// Silence button's text and color, and drives the taskbar flash (only raised while
+        /// sounding, never independently per message, so it tracks the alarm exactly).
+        /// The button stays enabled in all three states — including when a click would be a
+        /// no-op (SilenceAlarm() no-ops if nothing is sounding) — because WPF's default
+        /// disabled-button style would otherwise paint over these custom colors, and the
+        /// button's color is itself the point in the Disarmed/Set states.
+        /// </summary>
+        private void SyncAlarmUi()
+        {
+            bool enabled = DWMBClient.AlarmSoundEnabled;
+            bool sounding = DWMBClient.IsAlarmSounding;
+
+            if (!enabled)
+            {
+                StopAlarmButtonFlash();
+                btnSilenceAlarm.Content = "Alarm - Disarmed";
+                btnSilenceAlarm.Background = AlarmDisarmedBrush;
+                btnSilenceAlarm.Foreground = Brushes.Black;
+            }
+            else if (!sounding)
+            {
+                StopAlarmButtonFlash();
+                btnSilenceAlarm.Content = "Alarm - Set";
+                btnSilenceAlarm.Background = AlarmSetBrush;
+                btnSilenceAlarm.Foreground = Brushes.White;
+            }
+            else
+            {
+                btnSilenceAlarm.Content = "Silence Alarm";
+                StartAlarmButtonFlash();
+            }
+
+            if (sounding)
+            {
+                // No point flashing the taskbar if the user is already looking at the window.
+                if (!IsActive)
+                {
+                    TaskbarFlasher.Start(this);
+                }
+            }
+            else
+            {
+                TaskbarFlasher.Stop(this);
+            }
+        }
+
+        /// <summary>Starts the Silence button's red/transparent 1 Hz blink. Safe to call repeatedly.</summary>
+        private void StartAlarmButtonFlash()
+        {
+            if (alarmFlashTimer != null)
+            {
+                return; // already flashing — don't reset the phase
+            }
+
+            alarmFlashRedPhase = true;
+            btnSilenceAlarm.Background = AlarmSoundingBrush;
+            btnSilenceAlarm.Foreground = Brushes.White;
+
+            alarmFlashTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500), // half-period of a 1 Hz alternation
+            };
+            alarmFlashTimer.Tick += AlarmFlashTimer_Tick;
+            alarmFlashTimer.Start();
+        }
+
+        private void AlarmFlashTimer_Tick(object? sender, EventArgs e)
+        {
+            alarmFlashRedPhase = !alarmFlashRedPhase;
+            btnSilenceAlarm.Background = alarmFlashRedPhase ? AlarmSoundingBrush : Brushes.Transparent;
+            btnSilenceAlarm.Foreground = alarmFlashRedPhase ? Brushes.White : Brushes.Black;
+        }
+
+        /// <summary>Stops the blink, if running. Safe to call when it's not.</summary>
+        private void StopAlarmButtonFlash()
+        {
+            if (alarmFlashTimer == null)
+            {
+                return;
+            }
+
+            alarmFlashTimer.Stop();
+            alarmFlashTimer.Tick -= AlarmFlashTimer_Tick;
+            alarmFlashTimer = null;
+        }
+
         private void LockInputs()
         {
             txtCallsign.IsEnabled = false;
@@ -293,6 +457,23 @@ namespace DWMB_AIO
 
         public static bool IsCapturing { get; set; } = false;
         public static bool? IsRegistered => am?.IsRegistered;
+
+        // --- Local alarm sound (in addition to the Discord notification) ---
+        // Off by default; toggled from the GUI (chkAlarmSound). A single AlarmPlayer
+        // instance for the process lifetime, same pattern as the static `logger`.
+        static readonly AlarmPlayer alarmPlayer = new();
+        public static bool AlarmSoundEnabled { get; set; } = false;
+        public static bool IsAlarmSounding => alarmPlayer.IsSounding;
+
+        /// <summary>Raised whenever the alarm starts/stops sounding. May fire off the UI thread.</summary>
+        public static event Action? AlarmStateChanged
+        {
+            add => alarmPlayer.StateChanged += value;
+            remove => alarmPlayer.StateChanged -= value;
+        }
+
+        /// <summary>Immediately stops the alarm sound, if it's sounding. Safe to call from the GUI at any time.</summary>
+        public static void SilenceAlarm() => alarmPlayer.Silence();
 
         // --- Message-forwarding health tracking (issue #8) ---
         // Forward failures used to be logged only; a burst (e.g. server unreachable) left
@@ -532,6 +713,22 @@ namespace DWMB_AIO
                         {
                             logger.Log("Duplicate message detected within 2 seconds.  Ignoring.");
                             continue; // skip processing this duplicate message
+                        }
+
+                        // Local alarm (which also drives the taskbar flash via
+                        // AlarmStateChanged, see MainWindow.SyncAlarmUi) is independent of
+                        // server forwarding (issue: notify even if the network call below
+                        // fails or is slow) and must never take the capture thread down.
+                        if (AlarmSoundEnabled)
+                        {
+                            try
+                            {
+                                alarmPlayer.Trigger();
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.Log("[ALARM-ERROR] Failed to play alarm sound: " + ex.Message);
+                            }
                         }
 
                         string loggingString = String.Format("{0} > {1} ({2}):\"{3}\" ",

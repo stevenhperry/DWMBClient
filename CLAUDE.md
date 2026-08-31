@@ -111,6 +111,10 @@ organized into folders that map to sub-namespaces:
   - `ApiObjects/` — DTOs (`ForwardedMessage`/`Message`, `ServerRegistrationResponse`,
     `MessageForwardRequest`).
   - `DWMBApiException` — API error type.
+- **`DWMB.Audio`** — local alarm sound (`AlarmPlayer`, `AlarmWaveProvider`), see below.
+- **`DWMB.Notifications`** — `TaskbarFlasher`, a thin P/Invoke wrapper around Win32
+  `FlashWindowEx` (WPF has no managed equivalent) that flashes the main window's
+  taskbar button, see below.
 - **`DWMB.Diagnostics`** — `Logger`, a minimal file logger. Defaults to
   `%LOCALAPPDATA%\DontWallopMeBro\log.txt` — the exe installs to Program Files,
   which a standard user can't write to, so the log can't live next to it or in
@@ -133,9 +137,18 @@ organized into folders that map to sub-namespaces:
    self-sent messages; forward direct messages to the user and on-frequency
    messages that start with the user's callsign. Duplicate messages within 2
    seconds are dropped.
-6. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
-7. **Pause** stops capture; **Deregister** stops capture and calls
-   `/api/v1/deregister`, then unlocks the inputs.
+6. If not a duplicate, and the alarm-sound checkbox is on, `DWMBClient` triggers
+   the local alarm (`AlarmPlayer.Trigger`) — independent of and before the network
+   call below, so it fires even if forwarding is slow or fails. The taskbar flash
+   is not raised independently here; it rides along on the alarm's own
+   `AlarmStateChanged` event (see `DWMB.Notifications` below), so it only happens
+   when the alarm sound does.
+7. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
+8. **Pause** stops capture; **Deregister** stops capture and calls
+   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding (and by
+   extension any in-progress taskbar flash), is left alone by both — it's a local
+   "you have an unacknowledged message" indicator the user silences on their own
+   via the GUI, not tied to the connection lifecycle.
 
 ## Conventions & gotchas
 
@@ -184,6 +197,59 @@ organized into folders that map to sub-namespaces:
   `PcapDriverCheck.IsRunningElevated()` (`WindowsPrincipal.IsInRole(Administrator)`)
   and appends a "try running DWMB as Administrator" hint when the process isn't
   elevated.
+
+- **Alarm sound (`DWMB.Audio`):** off by default, toggled via `chkAlarmSound` on the
+  main window (`DWMBClient.AlarmSoundEnabled`). `AlarmWaveProvider` synthesizes the
+  tone in code (no bundled audio asset) as raw 16-bit PCM (`IWaveProvider`, not the
+  float-based `ISampleProvider`, to depend only on NAudio's long-stable core API),
+  in three phases timed from `Trigger()`: a sweeping siren ramping 5%→100% volume
+  over the first 30s, held at 100% from 30–60s, then (past 60s) a deliberately
+  harsher fixed-pitch tone gated into rapid beeps — at 100% continuously — so an
+  alarm that's gone unacknowledged for a full minute sounds unmistakably more
+  urgent than one that just started. `AlarmPlayer` wraps a NAudio `WaveOutEvent`,
+  which — unlike the older `WaveOut` —
+  drives playback from its own background thread rather than needing a Win32
+  message pump/STA thread, so `Trigger()` is safe to call directly from the
+  SharpPcap capture thread and `Silence()` from the UI thread with no dispatcher
+  marshalling (contrast with `ForwardStatusChanged`/`AlarmStateChanged`
+  themselves, which *do* need marshalling before touching WPF controls — see
+  `OnForwardStatusChanged`/`OnAlarmStateChanged` in `MainWindow`). A second
+  `Trigger()` while already sounding is a no-op (doesn't restart the ramp or
+  stack players); unchecking the GUI checkbox also silences an alarm already in
+  progress, not just future ones. This is in addition to, not a replacement for,
+  the Discord notification — Discord can be muted or backgrounded.
+
+- **Taskbar flash (`DWMB.Notifications`):** no separate GUI toggle — it rides
+  entirely on the alarm sound's own lifecycle rather than being raised
+  independently per message, so it only starts when the (opt-in) alarm actually
+  triggers, and stops the moment the alarm is silenced. `MainWindow.SyncAlarmUi`
+  is the single place both are driven from: it's called from `OnAlarmStateChanged`
+  (the `DWMBClient.AlarmStateChanged` handler, marshalled to the UI thread same as
+  `OnForwardStatusChanged`), and flashes only if `DWMBClient.IsAlarmSounding` is
+  true *and* `!IsActive` (no point flashing when the user is already looking at
+  the window) — otherwise it calls `TaskbarFlasher.Stop`. `TaskbarFlasher` wraps
+  the Win32 `FlashWindowEx` API (`user32.dll`); note `FLASHW_TIMERNOFG` will also
+  stop the flash on its own once the window reaches the foreground even before
+  the alarm is silenced (a Windows behavior, not something this app tracks) —
+  `SyncAlarmUi`'s explicit `Stop` call is what ties the *silencing* case to the
+  flash specifically.
+
+- **Silence button as a status readout:** `btnSilenceAlarm`'s text/color are set
+  entirely from code in `SyncAlarmUi` (there's no XAML default beyond the initial
+  "Silence Alarm" text, immediately overwritten at startup) and reflect three
+  states: checkbox unchecked → "Alarm - Disarmed" / cautionary amber; checked but
+  not sounding → "Alarm - Set" / muted green; sounding → "Silence Alarm",
+  blinking red/transparent at 1Hz via `alarmFlashTimer` (a `DispatcherTimer`
+  ticking every 500ms — half the blink period — started/stopped in `SyncAlarmUi`
+  so it's never left running outside the sounding state). The button stays
+  `IsEnabled=true` in all three states, even though a click while not sounding is
+  a no-op (`AlarmPlayer.Silence()` no-ops when nothing's playing) — WPF's default
+  disabled-button style overrides a custom `Background` in most themes, which
+  would otherwise hide the amber/green coloring entirely. Because `SyncAlarmUi`
+  only runs from `AlarmStateChanged` (which doesn't fire from toggling the
+  checkbox alone, only from `AlarmPlayer` actually starting/stopping),
+  `chkAlarmSound_CheckedChanged` also calls `SyncAlarmUi()` directly — otherwise
+  arming/disarming while quiet wouldn't visibly update the button.
 
 Search for `TODO` before assuming a rough edge is a bug.
 
