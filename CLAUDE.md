@@ -43,7 +43,13 @@ There is no test project.
 (`win-x64`) and packages it as `DWMB-AIO-Client-Setup.msi`. Build it with
 `dotnet build Installer\DWMB.Installer.wixproj -c Release`; see
 `Installer/README.md` for details. `.github/workflows/installer.yml` builds it in
-CI (`windows-latest`) and uploads the `.msi` as a workflow artifact. The install is
+CI (`windows-latest`) and uploads the `.msi` as a workflow artifact (requires
+GitHub auth to download). For a real tagged (`v*`) build, it additionally
+publishes the MSI as a public asset on the GitHub Release for that tag (via
+`softprops/action-gh-release`, needing `permissions: contents: write` on the
+job) — this is what makes the MSI reachable from `releases/latest`, which the
+in-app update checker (`DWMB.Updates.UpdateChecker`, see below) queries. Test
+builds (non-tag pushes) are never published this way. The install is
 per-user (`Package/@Scope="perUser"` in `Package.wxs`, installing under
 `%LOCALAPPDATA%\Programs\DontWallopMeBro` via `StandardDirectory
 Id="PerUserProgramFilesFolder"`) rather than per-machine, so running the installer
@@ -118,6 +124,15 @@ organized into folders that map to sub-namespaces:
   `%LOCALAPPDATA%\Programs\...` — see MSI installer above — so that folder
   happens to be writable too, but logs stay in their own `%LOCALAPPDATA%`
   location regardless, kept separate from the app's own program files.)
+- **`DWMB.Settings`** — `AppSettings`, the first persisted-preferences infra in the
+  repo: a flat JSON file (`%LOCALAPPDATA%\DontWallopMeBro\settings.json`, sibling
+  to `log.txt`) holding user-toggleable options, currently just
+  `AutomaticallyCheckForUpdates` (default `true`). `Load()`/`Save()` never throw —
+  a missing/corrupt file falls back to defaults, and a failed write is log-only —
+  since a broken settings file must not crash or block startup.
+- **`DWMB.Updates`** — `UpdateChecker`, a static, UI-agnostic class that queries
+  GitHub's `releases/latest` API for the repo and compares the tag against
+  `AppInfo.DisplayVersion`. See "In-app update check" below.
 
 ### Runtime flow
 
@@ -136,6 +151,37 @@ organized into folders that map to sub-namespaces:
 6. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
 7. **Pause** stops capture; **Deregister** stops capture and calls
    `/api/v1/deregister`, then unlocks the inputs.
+
+### In-app update check
+
+`MainWindow`'s constructor, right after `CheckNpcapInstalled()`, loads
+`AppSettings` and — if `AutomaticallyCheckForUpdates` is on (default) — fires
+`CheckForUpdatesInBackground()`: a `Task.Run` (the only TPL usage in the
+codebase; everything else here is synchronous code-behind) that calls
+`UpdateChecker.CheckForUpdate(AppInfo.DisplayVersion, logger)` and, on a
+strictly newer well-formed release, marshals the result back to the UI thread
+via `Dispatcher.BeginInvoke` (same idiom as `DWMBClient.ForwardStatusChanged`)
+to show a click-to-open banner (`btnUpdateBanner`) near `labelVersion`. This is
+notify-only: clicking it just opens the GitHub release page in the browser
+(`Process.Start(..., UseShellExecute = true)`, same pattern as the Npcap
+download prompt) — nothing is downloaded or installed automatically. Every
+failure path (network error, GitHub rate-limiting, no releases yet, a
+pre-release/malformed tag, an unparseable current version, or current >=
+latest) is swallowed inside `UpdateChecker.CheckForUpdate` and just logged —
+an update check must never show a dialog or block startup. The opt-in
+checkbox (`chkAutoCheckUpdates`, in the Advanced `Expander`) persists via
+`AppSettings.Save()` on toggle.
+
+Because `UpdateChecker` parses tags with the same `^v(\d+)\.(\d+)\.(\d+)$`
+regex the release workflow enforces before it will build a release, and
+because `releases/latest` only ever returns non-draft/non-prerelease releases,
+the only way this can show a banner is a genuine tagged release with a
+downloadable MSI attached — see the GitHub Release publishing note below.
+
+**Local/dev builds** only know whatever version was last hand-bumped into
+`DWMB.csproj` (see "Version numbers" below) — this feature doesn't change that
+pre-existing limitation, it just inherits it: an update check from a dev build
+is only as accurate as that manually-maintained number.
 
 ## Conventions & gotchas
 

@@ -2,6 +2,8 @@
 using DWMB_AIO.DWMB.FsdDetection;
 using DWMB_AIO.DWMB.FsdObjects;
 using DWMB_AIO.DWMB.Serialization;
+using DWMB_AIO.DWMB.Settings;
+using DWMB_AIO.DWMB.Updates;
 using SharpPcap;
 using System.Diagnostics;
 using System.Text;
@@ -18,17 +20,81 @@ namespace DWMB_AIO
     /// </summary>
     public partial class MainWindow : Window
     {
+        private readonly AppSettings appSettings;
+        private string? pendingReleaseUrl;
+
         public MainWindow()
         {
             InitializeComponent();
 
             CheckNpcapInstalled();
 
+            appSettings = AppSettings.Load();
+            chkAutoCheckUpdates.IsChecked = appSettings.AutomaticallyCheckForUpdates;
+            if (appSettings.AutomaticallyCheckForUpdates)
+            {
+                CheckForUpdatesInBackground();
+            }
+
             // Surface forwarding failures raised on the capture thread (issue #8).
             DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
 
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
+        }
+
+        /// <summary>
+        /// Fire-and-forget startup check against GitHub Releases (see UpdateChecker).
+        /// Runs off the UI thread since RestSharp's Execute call blocks; any result is
+        /// marshaled back via Dispatcher.BeginInvoke, mirroring OnForwardStatusChanged.
+        /// Never surfaces an error dialog or blocks startup — failures are log-only.
+        /// </summary>
+        private void CheckForUpdatesInBackground()
+        {
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    var result = UpdateChecker.CheckForUpdate(AppInfo.DisplayVersion, new Logger());
+                    if (result.HasValue)
+                    {
+                        Dispatcher.BeginInvoke(new Action(() => ShowUpdateBanner(result.Value)));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Defense in depth beyond UpdateChecker's own catch-all — an update
+                    // check must never be able to crash the app (issue #6 precedent).
+                    new Logger().Log("[UPDATE-CHECK] Unexpected failure: " + ex);
+                }
+            });
+        }
+
+        private void ShowUpdateBanner(UpdateChecker.UpdateResult result)
+        {
+            pendingReleaseUrl = result.ReleaseUrl;
+            btnUpdateBanner.Content = $"Update available: v{result.LatestVersion} — click to download";
+            btnUpdateBanner.Visibility = Visibility.Visible;
+        }
+
+        private void btnUpdateBanner_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(pendingReleaseUrl)) return;
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(pendingReleaseUrl) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Unable to open link: {ex.Message}", "DWMB - Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void chkAutoCheckUpdates_Changed(object sender, RoutedEventArgs e)
+        {
+            appSettings.AutomaticallyCheckForUpdates = chkAutoCheckUpdates.IsChecked == true;
+            appSettings.Save();
         }
 
         /// <summary>

@@ -40,24 +40,29 @@
 				  Header="Advanced"
 				  IsExpanded="False"
 				  HorizontalAlignment="Right"
-				  VerticalAlignment="Top" Width="150" Height="60" Margin="0,0,0,0" FontSize="9" RenderTransformOrigin="0.5,0.5"
+				  VerticalAlignment="Top" Width="150" Height="80" Margin="0,0,0,0" FontSize="9" RenderTransformOrigin="0.5,0.5"
 				  >
 			<StackPanel>
-				<Label Content="For use by testing team only."
-					   Padding="1"
-					   />
 				<!-- Server environment toggle. Defaults to unchecked (Production). Disabled while
 				registered/capturing so the target server can't change out from under an active
 				connection (see LockInputs/UnlockInputs). -->
+				<Label Content="For use by testing team only."
+					   Padding="1"
+					   />
 				<CheckBox x:Name="chkUseDevServer"
 						  Content="Use test server"
 						  IsChecked="False"
 						  ToolTip="Route messages to the DWMB development server instead of production. Cannot be changed while connected."
 						  />
-				<!-- Server environment toggle. Defaults to unchecked (Production). Disabled while
-				registered/capturing so the target server can't change out from under an active
-				connection (see LockInputs/UnlockInputs). -->
-				
+				<!-- Opt-in, on-by-default update notification. Checked once on startup only;
+				never downloads or installs anything automatically (see UpdateChecker). -->
+				<CheckBox x:Name="chkAutoCheckUpdates"
+						  Content="Automatically check for updates"
+						  IsChecked="True"
+						  Checked="chkAutoCheckUpdates_Changed"
+						  Unchecked="chkAutoCheckUpdates_Changed"
+						  ToolTip="Check GitHub for a newer DWMB release each time the app starts. Never downloads or installs anything automatically."
+						  />
 			</StackPanel>
 		</Expander>
 
@@ -82,6 +87,22 @@
 
 		<!-- Version box (now pulls from assembly attributes generated from the csproj) -->
 		<Label Name="labelVersion" Content="{x:Static local:AppInfo.DisplayVersion}" ContentStringFormat="v {0}" HorizontalAlignment="Left" VerticalAlignment="Bottom" FontSize="8"/>
+
+		<!-- Update notification banner. Hidden until a background startup check (see
+		     UpdateChecker) finds a strictly newer GitHub release; clicking it opens the
+		     release page in the browser rather than downloading/installing anything. -->
+		<Button x:Name="btnUpdateBanner"
+				Visibility="Collapsed"
+				Click="btnUpdateBanner_Click"
+				HorizontalAlignment="Left"
+				VerticalAlignment="Bottom"
+				Margin="0,0,0,14"
+				FontSize="10"
+				Foreground="Blue"
+				Background="Transparent"
+				BorderThickness="0"
+				Cursor="Hand"
+				ToolTip="Opens the DWMB release page in your browser."/>
 
 	</Grid>
 </Window>
