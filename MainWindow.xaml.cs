@@ -1,13 +1,17 @@
-﻿using DWMB_AIO.DWMB.Diagnostics;
+﻿using DWMB_AIO.DWMB.Audio;
+using DWMB_AIO.DWMB.Diagnostics;
 using DWMB_AIO.DWMB.FsdDetection;
 using DWMB_AIO.DWMB.FsdObjects;
+using DWMB_AIO.DWMB.Notifications;
 using DWMB_AIO.DWMB.Serialization;
 using SharpPcap;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 
 
@@ -26,6 +30,15 @@ namespace DWMB_AIO
 
             // Surface forwarding failures raised on the capture thread (issue #8).
             DWMBClient.ForwardStatusChanged += OnForwardStatusChanged;
+
+            // Keep the Silence button and taskbar flash in sync with whether the alarm is
+            // actually sounding — the flash is tied entirely to the alarm's own start/stop,
+            // not raised independently, so it only happens when the (opt-in) alarm sound
+            // does, and stops the moment the alarm is silenced.
+            DWMBClient.AlarmStateChanged += OnAlarmStateChanged;
+            DWMBClient.AlarmSoundEnabled = chkAlarmSound.IsChecked == true; // off by default
+            DWMBClient.RepeatDiscordPingEnabled = chkRepeatDiscordPing.IsChecked == true; // off by default
+            SyncAlarmUi();
 
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
@@ -229,6 +242,184 @@ namespace DWMB_AIO
             }
         }
 
+        // Silence button colors for the "Disarmed"/"Set" states (the "Sounding" state
+        // alternates between AlarmSoundingBrush and Brushes.Transparent — see
+        // AlarmFlashTimer_Tick). Frozen so they're cheap to reuse on every UI update.
+        private static readonly SolidColorBrush AlarmDisarmedBrush = FrozenBrush(0xFF, 0xC1, 0x07); // cautionary amber/yellow
+        private static readonly SolidColorBrush AlarmSetBrush = FrozenBrush(0x6B, 0x8E, 0x5A); // muted green
+        private static readonly SolidColorBrush AlarmSoundingBrush = FrozenBrush(0xE5, 0x39, 0x35); // alert red
+
+        private static SolidColorBrush FrozenBrush(byte r, byte g, byte b)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+            brush.Freeze();
+            return brush;
+        }
+
+        // Drives the Silence button's red/transparent blink while the alarm is sounding.
+        // Only running while sounding — started/stopped in SyncAlarmUi, never left ticking
+        // in the other two states.
+        private DispatcherTimer? alarmFlashTimer;
+        private bool alarmFlashRedPhase;
+
+        /// <summary>
+        /// Toggles whether new messages trigger the local alarm sound. Off by default.
+        /// Turning it off also silences an alarm that's already sounding, rather than just
+        /// suppressing future ones.
+        /// </summary>
+        private void chkAlarmSound_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            bool enabled = chkAlarmSound.IsChecked == true;
+            DWMBClient.AlarmSoundEnabled = enabled;
+
+            if (!enabled)
+            {
+                DWMBClient.SilenceAlarm();
+            }
+
+            // SilenceAlarm() above only raises AlarmStateChanged (and so re-syncs the UI)
+            // when it actually stops a sounding alarm. Flipping the checkbox while nothing
+            // is sounding — e.g. arming/disarming ahead of time — needs its own sync so the
+            // button still switches between "Disarmed" and "Set".
+            SyncAlarmUi();
+        }
+
+        /// <summary>
+        /// Toggles whether the message that triggered the alarm keeps being re-forwarded to
+        /// the server (and so re-pinged on Discord) every 60 seconds until the alarm is
+        /// silenced. Off by default, and only selectable while the alarm sound is armed —
+        /// see <see cref="SyncAlarmUi"/>.
+        /// </summary>
+        private void chkRepeatDiscordPing_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            bool enabled = chkRepeatDiscordPing.IsChecked == true;
+            DWMBClient.RepeatDiscordPingEnabled = enabled;
+
+            if (!enabled)
+            {
+                // Turning it off stops a loop already running rather than only suppressing
+                // future ones — the same contract as unchecking chkAlarmSound silencing an
+                // alarm that's already sounding. Turning it back on does not retroactively
+                // arm one; it applies to the next message that triggers the alarm.
+                DWMBClient.StopRepeatForward();
+            }
+        }
+
+        private void btnSilenceAlarm_Click(object sender, RoutedEventArgs e)
+        {
+            DWMBClient.SilenceAlarm();
+        }
+
+        /// <summary>
+        /// Handles <see cref="DWMBClient.AlarmStateChanged"/>, which may fire on the capture
+        /// thread — marshal to the UI thread before touching controls (same pattern as
+        /// <see cref="OnForwardStatusChanged"/>, issue #8).
+        /// </summary>
+        private void OnAlarmStateChanged()
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                SyncAlarmUi();
+            }
+            else
+            {
+                Dispatcher.BeginInvoke(new Action(SyncAlarmUi));
+            }
+        }
+
+        /// <summary>
+        /// Reflects the alarm's state — disarmed / armed-but-quiet / sounding — on the
+        /// Silence button's text and color, and drives the taskbar flash (only raised while
+        /// sounding, never independently per message, so it tracks the alarm exactly).
+        /// The button stays enabled in all three states — including when a click would be a
+        /// no-op (SilenceAlarm() no-ops if nothing is sounding) — because WPF's default
+        /// disabled-button style would otherwise paint over these custom colors, and the
+        /// button's color is itself the point in the Disarmed/Set states.
+        /// </summary>
+        private void SyncAlarmUi()
+        {
+            bool enabled = DWMBClient.AlarmSoundEnabled;
+            bool sounding = DWMBClient.IsAlarmSounding;
+
+            // Repeating is defined as "until the alarm is silenced", so it only means
+            // anything while the alarm is armed. Greyed out rather than unchecked when the
+            // alarm is disarmed, so the user's choice survives arming/disarming.
+            chkRepeatDiscordPing.IsEnabled = enabled;
+
+            if (!enabled)
+            {
+                StopAlarmButtonFlash();
+                btnSilenceAlarm.Content = "Alarm - Disarmed";
+                btnSilenceAlarm.Background = AlarmDisarmedBrush;
+                btnSilenceAlarm.Foreground = Brushes.Black;
+            }
+            else if (!sounding)
+            {
+                StopAlarmButtonFlash();
+                btnSilenceAlarm.Content = "Alarm - Set";
+                btnSilenceAlarm.Background = AlarmSetBrush;
+                btnSilenceAlarm.Foreground = Brushes.White;
+            }
+            else
+            {
+                btnSilenceAlarm.Content = "Silence Alarm";
+                StartAlarmButtonFlash();
+            }
+
+            if (sounding)
+            {
+                // No point flashing the taskbar if the user is already looking at the window.
+                if (!IsActive)
+                {
+                    TaskbarFlasher.Start(this);
+                }
+            }
+            else
+            {
+                TaskbarFlasher.Stop(this);
+            }
+        }
+
+        /// <summary>Starts the Silence button's red/transparent 1 Hz blink. Safe to call repeatedly.</summary>
+        private void StartAlarmButtonFlash()
+        {
+            if (alarmFlashTimer != null)
+            {
+                return; // already flashing — don't reset the phase
+            }
+
+            alarmFlashRedPhase = true;
+            btnSilenceAlarm.Background = AlarmSoundingBrush;
+            btnSilenceAlarm.Foreground = Brushes.White;
+
+            alarmFlashTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500), // half-period of a 1 Hz alternation
+            };
+            alarmFlashTimer.Tick += AlarmFlashTimer_Tick;
+            alarmFlashTimer.Start();
+        }
+
+        private void AlarmFlashTimer_Tick(object? sender, EventArgs e)
+        {
+            alarmFlashRedPhase = !alarmFlashRedPhase;
+            btnSilenceAlarm.Background = alarmFlashRedPhase ? AlarmSoundingBrush : Brushes.Transparent;
+            btnSilenceAlarm.Foreground = alarmFlashRedPhase ? Brushes.White : Brushes.Black;
+        }
+
+        /// <summary>Stops the blink, if running. Safe to call when it's not.</summary>
+        private void StopAlarmButtonFlash()
+        {
+            if (alarmFlashTimer == null)
+            {
+                return;
+            }
+
+            alarmFlashTimer.Stop();
+            alarmFlashTimer.Tick -= AlarmFlashTimer_Tick;
+            alarmFlashTimer = null;
+        }
+
         private void LockInputs()
         {
             txtCallsign.IsEnabled = false;
@@ -293,6 +484,199 @@ namespace DWMB_AIO
 
         public static bool IsCapturing { get; set; } = false;
         public static bool? IsRegistered => am?.IsRegistered;
+
+        // --- Local alarm sound (in addition to the Discord notification) ---
+        // Off by default; toggled from the GUI (chkAlarmSound). A single AlarmPlayer
+        // instance for the process lifetime, same pattern as the static `logger`.
+        static readonly AlarmPlayer alarmPlayer = new();
+        public static bool AlarmSoundEnabled { get; set; } = false;
+        public static bool IsAlarmSounding => alarmPlayer.IsSounding;
+
+        /// <summary>Raised whenever the alarm starts/stops sounding. May fire off the UI thread.</summary>
+        public static event Action? AlarmStateChanged
+        {
+            add => alarmPlayer.StateChanged += value;
+            remove => alarmPlayer.StateChanged -= value;
+        }
+
+        /// <summary>Immediately stops the alarm sound, if it's sounding. Safe to call from the GUI at any time.</summary>
+        public static void SilenceAlarm() => alarmPlayer.Silence();
+
+        // --- Repeat Discord ping (chkRepeatDiscordPing) ---
+        // Off by default, and only ever armed when the alarm sound is. While the alarm is
+        // sounding, the message that started it is re-forwarded to the server every
+        // REPEAT_INTERVAL_MS, so Discord keeps pinging until the user acknowledges by
+        // silencing the alarm — the Discord-side equivalent of the escalation the local
+        // alarm already does. Only the triggering message repeats: messages arriving
+        // mid-alarm are forwarded once as usual, and neither replace the repeat target nor
+        // reset its clock.
+        public static bool RepeatDiscordPingEnabled { get; set; } = false;
+
+        // Guarded by stateLock, like the other statics shared between the capture thread,
+        // the UI thread and (now) the repeat timer's thread. Kept deliberately separate
+        // from `lastMessage`, which exists only for the 2-second duplicate window and is
+        // assigned only on a successful forward.
+        static FsdMessage? repeatMessage;
+        static System.Threading.Timer? repeatTimer;
+
+        // Bumped on every start and stop. Timer.Dispose() does not wait for a callback
+        // that is already running or already queued, so a stopped loop can still get one
+        // more tick; each tick compares the generation it was scheduled with against this
+        // one and bails if it has been superseded.
+        static int repeatGeneration;
+
+        const int REPEAT_INTERVAL_MS = 60_000;
+
+        static DWMBClient()
+        {
+            // The repeat loop's lifetime is exactly the alarm's. Hooking StateChanged
+            // rather than SilenceAlarm() covers all three ways the alarm can end: the
+            // Silence button, unchecking chkAlarmSound, and playback stopping on its own
+            // (an audio device error). That last case would otherwise leave the loop
+            // pinging Discord forever with no UI affordance left to stop it.
+            alarmPlayer.StateChanged += () =>
+            {
+                if (!alarmPlayer.IsSounding)
+                {
+                    StopRepeatForward();
+                }
+            };
+        }
+
+        /// <summary>
+        /// Arms the repeat loop for <paramref name="msg"/> — the message that just started
+        /// the alarm. Called on the capture thread.
+        /// </summary>
+        private static void StartRepeatForward(FsdMessage msg)
+        {
+            // Idempotent: any previous loop is cancelled first, so a new alarm supersedes
+            // an older repeat target rather than stacking timers.
+            StopRepeatForward();
+
+            lock (stateLock)
+            {
+                repeatMessage = msg;
+                int generation = ++repeatGeneration;
+
+                // dueTime only, period Infinite: each tick re-arms itself once its forward
+                // has returned, so two ticks can never overlap if a POST hangs
+                // (ForwardMessage is synchronous, with no timeout override).
+                repeatTimer = new System.Threading.Timer(
+                    RepeatForwardTick, generation, REPEAT_INTERVAL_MS, System.Threading.Timeout.Infinite);
+            }
+
+            // Logged outside the lock — stateLock is never held across file or network I/O.
+            logger.Log(String.Format(
+                "[REPEAT] Repeat Discord ping armed for \"{0} > {1}\"; re-forwarding every {2}s until the alarm is silenced.",
+                msg.Sender, msg.Recipient, REPEAT_INTERVAL_MS / 1000));
+
+            // The alarm can have been silenced between Trigger() and here: the initial
+            // forward sits in between, and ForwardMessage is a synchronous POST, so that
+            // window is seconds wide rather than microseconds. A Silence() inside it ran
+            // its StateChanged handler before this method armed anything, so that handler
+            // missed us and we'd be left repeating with no alarm left to stop us.
+            // Re-checking after arming closes the window from the other side: either we
+            // see the alarm already gone and stand down here, or we armed first and that
+            // handler stops us. The log then reads armed-then-stopped, which is accurate.
+            if (!alarmPlayer.IsSounding)
+            {
+                StopRepeatForward();
+            }
+        }
+
+        /// <summary>
+        /// One tick of the repeat loop: re-forwards the retained triggering message, then
+        /// re-arms. Runs on a thread-pool thread owned by <see cref="repeatTimer"/>.
+        /// </summary>
+        private static void RepeatForwardTick(object? state)
+        {
+            // An exception escaping a System.Threading.Timer callback is unhandled on a
+            // background thread and terminates the process — the same hazard as the capture
+            // callback (issue #6) — so the whole body is guarded.
+            try
+            {
+                int generation = state is int g ? g : -1;
+
+                ApiManager? currentAm;
+                FsdMessage? msg;
+                lock (stateLock)
+                {
+                    if (generation != repeatGeneration)
+                    {
+                        // Superseded or stopped while this callback was queued.
+                        return;
+                    }
+
+                    // `am` is read live each tick rather than captured when the loop was
+                    // armed, so a Pause/Start cycle (which builds a fresh ApiManager) is
+                    // picked up without the user having to re-trigger the alarm.
+                    currentAm = am;
+                    msg = repeatMessage;
+                }
+
+                if (currentAm == null || msg == null)
+                {
+                    StopRepeatForward();
+                    return;
+                }
+
+                try
+                {
+                    // Forward outside the lock — never hold it across network I/O.
+                    currentAm.ForwardMessage(msg);
+                    logger.Log(String.Format("[REPEAT] Re-forwarded unacknowledged message {0} > {1}: \"{2}\"",
+                                             msg.Sender, msg.Recipient, msg.Message));
+                }
+                catch (Exception ex)
+                {
+                    // Surface repeat failures in the forwarding-health indicator too, so a
+                    // repeat loop silently failing against the server is visible (issue #8).
+                    logger.Log("[REPEAT-ERROR] Failed to re-forward the unacknowledged message: " + ex.Message);
+                    RecordForwardFailure(ex.Message);
+                }
+
+                lock (stateLock)
+                {
+                    // Only re-arm if this generation is still the live one — the alarm may
+                    // have been silenced while the forward above was in flight.
+                    if (generation == repeatGeneration)
+                    {
+                        repeatTimer?.Change(REPEAT_INTERVAL_MS, System.Threading.Timeout.Infinite);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { logger.Log("[REPEAT-ERROR] Repeat tick failed (ignored): " + ex); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// Stops the repeat loop and forgets the retained message. Safe to call from any
+        /// thread, and when no loop is running.
+        /// </summary>
+        public static void StopRepeatForward()
+        {
+            System.Threading.Timer? toDispose;
+
+            lock (stateLock)
+            {
+                // Invalidate any callback that is already running or queued before the
+                // timer goes away — Dispose() on its own does not wait for one.
+                repeatGeneration++;
+                toDispose = repeatTimer;
+                repeatTimer = null;
+                repeatMessage = null;
+            }
+
+            if (toDispose == null)
+            {
+                return; // nothing was running
+            }
+
+            try { toDispose.Dispose(); } catch { }
+            logger.Log("[REPEAT] Repeat Discord ping stopped.");
+        }
 
         // --- Message-forwarding health tracking (issue #8) ---
         // Forward failures used to be logged only; a burst (e.g. server unreachable) left
@@ -534,6 +918,26 @@ namespace DWMB_AIO
                             continue; // skip processing this duplicate message
                         }
 
+                        // Local alarm (which also drives the taskbar flash via
+                        // AlarmStateChanged, see MainWindow.SyncAlarmUi) is independent of
+                        // server forwarding (issue: notify even if the network call below
+                        // fails or is slow) and must never take the capture thread down.
+                        // Trigger() reports whether this call actually started the alarm
+                        // (it no-ops while one is already sounding). That is what picks out
+                        // the single message which keeps re-pinging Discord below.
+                        bool alarmStarted = false;
+                        if (AlarmSoundEnabled)
+                        {
+                            try
+                            {
+                                alarmStarted = alarmPlayer.Trigger();
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.Log("[ALARM-ERROR] Failed to play alarm sound: " + ex.Message);
+                            }
+                        }
+
                         string loggingString = String.Format("{0} > {1} ({2}):\"{3}\" ",
                                                         input_pm.Sender,
                                                         input_pm.Recipient,
@@ -557,6 +961,17 @@ namespace DWMB_AIO
                             // surface it in the UI via the forwarding-health indicator.
                             logger.Log("[FORWARD-ERROR] Failed to forward message (" + loggingString + "): " + ex.Message);
                             RecordForwardFailure(ex.Message);
+                        }
+
+                        // This message started the alarm, so it's the one that keeps
+                        // pinging Discord until the user acknowledges. Armed whether or not
+                        // the forward above succeeded — if it failed, the repeat doubles as
+                        // a retry. alarmStarted can only be true when AlarmSoundEnabled is,
+                        // so "repeat requires the alarm sound" holds structurally, not just
+                        // because the GUI greys the checkbox out.
+                        if (alarmStarted && RepeatDiscordPingEnabled)
+                        {
+                            StartRepeatForward(input_pm);
                         }
 
                     }
@@ -655,6 +1070,12 @@ namespace DWMB_AIO
 
         public static bool Deregister(string strToken)
         {
+            // Deregistering is the user's intent to disconnect, so the repeat loop stops
+            // here whatever the outcome below — including when deregistration fails or the
+            // client wasn't registered. Pause (Stop()) deliberately leaves it running: the
+            // registration is still live there, same as the alarm sound itself.
+            StopRepeatForward();
+
             // am is null before the first Start (issue #5 change), so null-guard here.
             if (am != null && am.IsRegistered)
             {

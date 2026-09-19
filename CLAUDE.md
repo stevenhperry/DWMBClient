@@ -111,6 +111,10 @@ organized into folders that map to sub-namespaces:
   - `ApiObjects/` — DTOs (`ForwardedMessage`/`Message`, `ServerRegistrationResponse`,
     `MessageForwardRequest`).
   - `DWMBApiException` — API error type.
+- **`DWMB.Audio`** — local alarm sound (`AlarmPlayer`, `AlarmWaveProvider`), see below.
+- **`DWMB.Notifications`** — `TaskbarFlasher`, a thin P/Invoke wrapper around Win32
+  `FlashWindowEx` (WPF has no managed equivalent) that flashes the main window's
+  taskbar button, see below.
 - **`DWMB.Diagnostics`** — `Logger`, a minimal file logger. Defaults to
   `%LOCALAPPDATA%\DontWallopMeBro\log.txt` — the exe installs to Program Files,
   which a standard user can't write to, so the log can't live next to it or in
@@ -118,6 +122,9 @@ organized into folders that map to sub-namespaces:
   `%LOCALAPPDATA%\Programs\...` — see MSI installer above — so that folder
   happens to be writable too, but logs stay in their own `%LOCALAPPDATA%`
   location regardless, kept separate from the app's own program files.)
+  `Log` appends under a static lock: it's called from four threads (capture, UI,
+  the repeat-forward timer, and `App`'s unhandled-exception handlers) and
+  concurrent `File.AppendAllLines` calls on one path throw a sharing violation.
 
 ### Runtime flow
 
@@ -133,9 +140,25 @@ organized into folders that map to sub-namespaces:
    self-sent messages; forward direct messages to the user and on-frequency
    messages that start with the user's callsign. Duplicate messages within 2
    seconds are dropped.
-6. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
-7. **Pause** stops capture; **Deregister** stops capture and calls
-   `/api/v1/deregister`, then unlocks the inputs.
+6. If not a duplicate, and the alarm-sound checkbox is on, `DWMBClient` triggers
+   the local alarm (`AlarmPlayer.Trigger`) — independent of and before the network
+   call below, so it fires even if forwarding is slow or fails. The taskbar flash
+   is not raised independently here; it rides along on the alarm's own
+   `AlarmStateChanged` event (see `DWMB.Notifications` below), so it only happens
+   when the alarm sound does.
+7. `ApiManager.ForwardMessage` POSTs the message to `/api/v1/messaging`.
+8. If this message is the one that actually started the alarm (`Trigger()` returns
+   whether it did) and the Repeat Discord ping checkbox is on, `StartRepeatForward`
+   arms a timer that re-POSTs that same message every 60s until the alarm stops —
+   see the Repeat Discord ping bullet below.
+9. **Pause** stops capture; **Deregister** stops capture and calls
+   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding (and by
+   extension any in-progress taskbar flash), is left alone by both — it's a local
+   "you have an unacknowledged message" indicator the user silences on their own
+   via the GUI, not tied to the connection lifecycle. The repeat loop splits the
+   difference: **Pause** leaves it running (the registration is still live), but
+   **Deregister** stops it, since there's no longer a registration to forward
+   against.
 
 ## Conventions & gotchas
 
@@ -147,9 +170,11 @@ organized into folders that map to sub-namespaces:
   `am` is `null` until the user clicks Start (constructing it early validated the
   compiled-in server URL in a field initializer and crashed the app at launch), then
   it is set to a real `ApiManager` on Start. The shared statics that are touched by
-  both the capture thread and the UI thread (`am`, `callsign`, `lastMessage`) are
+  both the capture thread and the UI thread (`am`, `callsign`, `lastMessage`, plus
+  the repeat-loop trio `repeatMessage`/`repeatTimer`/`repeatGeneration`) are
   guarded by `stateLock`; the capture thread snapshots them under the lock and never
-  holds it across network I/O. Be careful editing this shared/static lifecycle.
+  holds it across network I/O — as does the repeat timer's thread, which is a third
+  toucher of these statics. Be careful editing this shared/static lifecycle.
 - **Version numbers** are set in `DWMB.csproj` (`<Version>`, `<AssemblyVersion>`,
   `<FileVersion>`, `<InformationalVersion>`) and surfaced at runtime via
   `AppInfo.DisplayVersion`, which the UI and `ApiManager` user-agent read. For a real
@@ -184,6 +209,92 @@ organized into folders that map to sub-namespaces:
   `PcapDriverCheck.IsRunningElevated()` (`WindowsPrincipal.IsInRole(Administrator)`)
   and appends a "try running DWMB as Administrator" hint when the process isn't
   elevated.
+
+- **Alarm sound (`DWMB.Audio`):** off by default, toggled via `chkAlarmSound` on the
+  main window (`DWMBClient.AlarmSoundEnabled`). `AlarmWaveProvider` synthesizes the
+  tone in code (no bundled audio asset) as raw 16-bit PCM (`IWaveProvider`, not the
+  float-based `ISampleProvider`, to depend only on NAudio's long-stable core API),
+  in three phases timed from `Trigger()`: a sweeping siren ramping 5%→100% volume
+  over the first 30s, held at 100% from 30–60s, then (past 60s) a deliberately
+  harsher fixed-pitch tone gated into rapid beeps — at 100% continuously — so an
+  alarm that's gone unacknowledged for a full minute sounds unmistakably more
+  urgent than one that just started. `AlarmPlayer` wraps a NAudio `WaveOutEvent`,
+  which — unlike the older `WaveOut` —
+  drives playback from its own background thread rather than needing a Win32
+  message pump/STA thread, so `Trigger()` is safe to call directly from the
+  SharpPcap capture thread and `Silence()` from the UI thread with no dispatcher
+  marshalling (contrast with `ForwardStatusChanged`/`AlarmStateChanged`
+  themselves, which *do* need marshalling before touching WPF controls — see
+  `OnForwardStatusChanged`/`OnAlarmStateChanged` in `MainWindow`). A second
+  `Trigger()` while already sounding is a no-op (doesn't restart the ramp or
+  stack players); it returns `bool` — whether *this* call started the alarm —
+  decided under `AlarmPlayer`'s own lock, which is how the capture thread picks out
+  the single message that triggers the repeat loop below without racing.
+  Unchecking the GUI checkbox also silences an alarm already in
+  progress, not just future ones. This is in addition to, not a replacement for,
+  the Discord notification — Discord can be muted or backgrounded.
+
+- **Repeat Discord ping (`chkRepeatDiscordPing`):** off by default, and only
+  selectable while `chkAlarmSound` is armed (`SyncAlarmUi` drives its `IsEnabled`,
+  greying it out rather than unchecking it so the choice survives arming/disarming).
+  "Until the alarm is silenced" is the whole contract, so it's meaningless without an
+  alarm to silence — and it's enforced structurally, not just in the GUI, because the
+  loop is only armed when `Trigger()` reports it actually started the alarm, which
+  can only happen when `AlarmSoundEnabled` is true. **Only the triggering message
+  repeats**: messages arriving mid-alarm are forwarded once as usual and neither
+  replace the repeat target nor reset its clock. The loop is a
+  `System.Threading.Timer` (matching `ApiManager`'s heartbeat timer, the established
+  pattern for periodic network work here — but logging via `Logger` rather than
+  `Console`, which is invisible in a WinExe), scheduled with `period = Infinite` and
+  re-armed by each tick after its forward returns, so ticks can't overlap when a POST
+  hangs (`ForwardMessage` is synchronous, with no timeout override). A generation
+  counter bumped on every start/stop makes a stale tick a no-op, since
+  `Timer.Dispose()` does not wait for a callback that's already running or queued.
+  Stopping is hung off `AlarmPlayer.StateChanged` rather than `SilenceAlarm()`, which
+  covers all three ways the alarm can end — the Silence button, unchecking
+  `chkAlarmSound`, and playback dying on an audio-device error; that last case would
+  otherwise strand the loop with no UI affordance left to stop it. `StartRepeatForward`
+  re-checks `IsSounding` *after* arming, because the initial (synchronous) forward sits
+  between `Trigger()` and the arm, leaving a seconds-wide window in which a `Silence()`
+  would run its stop handler before there was anything to stop.
+  Repeats re-send a byte-identical payload (same Unix-ms timestamp — `ForwardedMessage`/
+  `Message` carry no id, sequence, or repeat flag), so **if the server or bot ever
+  de-dupes on content, repeats will be accepted and silently produce no new Discord
+  ping**; making repeats distinguishable would need a new DTO field and a server change.
+  Repeat failures go through `RecordForwardFailure`, so they show up in the same
+  forwarding-health indicator as first-attempt failures.
+
+- **Taskbar flash (`DWMB.Notifications`):** no separate GUI toggle — it rides
+  entirely on the alarm sound's own lifecycle rather than being raised
+  independently per message, so it only starts when the (opt-in) alarm actually
+  triggers, and stops the moment the alarm is silenced. `MainWindow.SyncAlarmUi`
+  is the single place both are driven from: it's called from `OnAlarmStateChanged`
+  (the `DWMBClient.AlarmStateChanged` handler, marshalled to the UI thread same as
+  `OnForwardStatusChanged`), and flashes only if `DWMBClient.IsAlarmSounding` is
+  true *and* `!IsActive` (no point flashing when the user is already looking at
+  the window) — otherwise it calls `TaskbarFlasher.Stop`. `TaskbarFlasher` wraps
+  the Win32 `FlashWindowEx` API (`user32.dll`); note `FLASHW_TIMERNOFG` will also
+  stop the flash on its own once the window reaches the foreground even before
+  the alarm is silenced (a Windows behavior, not something this app tracks) —
+  `SyncAlarmUi`'s explicit `Stop` call is what ties the *silencing* case to the
+  flash specifically.
+
+- **Silence button as a status readout:** `btnSilenceAlarm`'s text/color are set
+  entirely from code in `SyncAlarmUi` (there's no XAML default beyond the initial
+  "Silence Alarm" text, immediately overwritten at startup) and reflect three
+  states: checkbox unchecked → "Alarm - Disarmed" / cautionary amber; checked but
+  not sounding → "Alarm - Set" / muted green; sounding → "Silence Alarm",
+  blinking red/transparent at 1Hz via `alarmFlashTimer` (a `DispatcherTimer`
+  ticking every 500ms — half the blink period — started/stopped in `SyncAlarmUi`
+  so it's never left running outside the sounding state). The button stays
+  `IsEnabled=true` in all three states, even though a click while not sounding is
+  a no-op (`AlarmPlayer.Silence()` no-ops when nothing's playing) — WPF's default
+  disabled-button style overrides a custom `Background` in most themes, which
+  would otherwise hide the amber/green coloring entirely. Because `SyncAlarmUi`
+  only runs from `AlarmStateChanged` (which doesn't fire from toggling the
+  checkbox alone, only from `AlarmPlayer` actually starting/stopping),
+  `chkAlarmSound_CheckedChanged` also calls `SyncAlarmUi()` directly — otherwise
+  arming/disarming while quiet wouldn't visibly update the button.
 
 Search for `TODO` before assuming a rough edge is a bug.
 

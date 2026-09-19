@@ -28,6 +28,16 @@
         public string FilePath => Filename;
 
         /// <summary>
+        /// Serializes writes to the log file. <see cref="Log"/> is called from several
+        /// threads at once — the SharpPcap capture thread, the WPF UI thread, the
+        /// repeat-forward timer thread, and App's unhandled-exception handlers — and
+        /// concurrent <c>File.AppendAllLines</c> calls against the same path throw an
+        /// IOException (sharing violation). Static because every Logger instance in the
+        /// process writes to the same default path.
+        /// </summary>
+        private static readonly object logGate = new object();
+
+        /// <summary>
         /// Initializes a new instance of the Logger class with the default log file.
         /// </summary>
         public Logger()
@@ -52,12 +62,16 @@
             string logMessage = string.Format("{0}: {1}", timestamp.ToString("u"), msg);
 
             string? dir = System.IO.Path.GetDirectoryName(Filename);
-            if (!string.IsNullOrEmpty(dir))
-            {
-                System.IO.Directory.CreateDirectory(dir);
-            }
 
-            System.IO.File.AppendAllLines(Filename, new string[] { logMessage });
+            lock (logGate)
+            {
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    System.IO.Directory.CreateDirectory(dir);
+                }
+
+                System.IO.File.AppendAllLines(Filename, new string[] { logMessage });
+            }
         }
     }
 }
