@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:DWMB_AIO"
         mc:Ignorable="d"
-        Title="DWMB" Width="600" Icon="/DWMB32.png" Height="400">
+        Title="DWMB" Width="600" Icon="/DWMB32.png" Height="430">
     <Grid Background="WhiteSmoke">
         <!-- Header -->
         <TextBlock Text="DWMB" FontSize="36" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="270,31,0,0"/>
@@ -36,19 +36,37 @@
         <Label Content="Registration Code" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="150,0,0,125" Grid.ColumnSpan="2"/>
 
 
-        <!-- Local alarm sound: an additional, harder-to-miss alert alongside the Discord
-		     notification (Discord can be muted/backgrounded). Off by default; the alarm
-		     starts quiet and ramps up to full volume the longer it goes unacknowledged.
-		     Unchecking this also silences an alarm already sounding. -->
-        <CheckBox x:Name="chkAlarmSound"
-				  Content="Play alarm on PC for new messages"
-				  IsChecked="False"
-				  HorizontalAlignment="Center"
-				  VerticalAlignment="Center"
-				  Margin="50,0,0,75"
-				  Checked="chkAlarmSound_CheckedChanged"
-				  Unchecked="chkAlarmSound_CheckedChanged"
-				  ToolTip="Plays a local alarm sound (starts quiet, gets louder over time) whenever a message is forwarded, in addition to the Discord notification. Off by default." />
+        <!-- Alarm options, stacked so the repeat option can sit indented under the alarm
+		     sound it depends on. Positioned as a unit where the alarm checkbox alone used to
+		     be (the window is 30px taller than it was to make room for the second line). -->
+        <StackPanel HorizontalAlignment="Center"
+					VerticalAlignment="Center"
+					Margin="50,0,0,105">
+            <!-- Local alarm sound: an additional, harder-to-miss alert alongside the Discord
+			     notification (Discord can be muted/backgrounded). Off by default; the alarm
+			     starts quiet and ramps up to full volume the longer it goes unacknowledged.
+			     Unchecking this also silences an alarm already sounding. -->
+            <CheckBox x:Name="chkAlarmSound"
+					  Content="Play alarm on PC for new messages"
+					  IsChecked="False"
+					  Checked="chkAlarmSound_CheckedChanged"
+					  Unchecked="chkAlarmSound_CheckedChanged"
+					  ToolTip="Plays a local alarm sound (starts quiet, gets louder over time) whenever a message is forwarded, in addition to the Discord notification. Off by default." />
+            <!-- Keeps the Discord side pinging while the alarm goes unacknowledged: the
+			     message that triggered the alarm is re-forwarded every 60s until it's silenced.
+			     Only that message repeats — later ones are forwarded once, as normal. Starts
+			     disabled to match chkAlarmSound's unchecked default; MainWindow.SyncAlarmUi
+			     drives IsEnabled from there on, since repeating is meaningless with no alarm
+			     to silence. -->
+            <CheckBox x:Name="chkRepeatDiscordPing"
+					  Content="Repeat Discord ping until silenced"
+					  IsChecked="False"
+					  IsEnabled="False"
+					  Margin="20,6,0,0"
+					  Checked="chkRepeatDiscordPing_CheckedChanged"
+					  Unchecked="chkRepeatDiscordPing_CheckedChanged"
+					  ToolTip="While the alarm is sounding, re-sends the message that triggered it to Discord every 60 seconds until you silence the alarm. Requires the alarm sound to be enabled." />
+        </StackPanel>
         <!-- Doubles as a status readout — text/color set entirely in code
 		     (MainWindow.SyncAlarmUi) from the checkbox + alarm state: cautionary yellow
 		     "Alarm - Disarmed" when unchecked, muted green "Alarm - Set" when checked but

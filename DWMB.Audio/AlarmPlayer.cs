@@ -32,13 +32,20 @@ namespace DWMB_AIO.DWMB.Audio
         /// call while it's already sounding is a no-op — a burst of messages doesn't restart
         /// the ramp or stack multiple alarms.
         /// </summary>
-        public void Trigger()
+        /// <returns>
+        /// <c>true</c> if this call actually started the alarm, <c>false</c> if it was already
+        /// sounding (or the player is disposed). Callers use this to pick out the single
+        /// message that triggered the alarm — see the repeat-forward loop in
+        /// <c>DWMBClient</c>. The answer is decided under <see cref="gate"/>, so it can't
+        /// race the way reading <see cref="IsSounding"/> around the call could.
+        /// </returns>
+        public bool Trigger()
         {
             lock (gate)
             {
                 if (disposed || IsSounding)
                 {
-                    return;
+                    return false;
                 }
 
                 // Play() just starts WaveOutEvent's own background playback thread and
@@ -55,6 +62,7 @@ namespace DWMB_AIO.DWMB.Audio
             }
 
             StateChanged?.Invoke();
+            return true;
         }
 
         /// <summary>Stops the alarm immediately, if it's sounding. Safe to call when it's not.</summary>
