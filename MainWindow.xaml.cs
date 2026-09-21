@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -38,8 +39,15 @@ namespace DWMB_AIO
             DWMBClient.AlarmStateChanged += OnAlarmStateChanged;
             DWMBClient.AlarmSoundEnabled = chkAlarmSound.IsChecked == true; // off by default
             DWMBClient.RepeatDiscordPingEnabled = chkRepeatDiscordPing.IsChecked == true; // off by default
-            SyncAlarmUi();
 
+            // Stash the XAML tooltips so SyncAlarmUi can swap in the "register first"
+            // explanation while the alarm group is locked, and put these back once it isn't.
+            alarmSoundToolTip = chkAlarmSound.ToolTip;
+            repeatDiscordPingToolTip = chkRepeatDiscordPing.ToolTip;
+            silenceAlarmToolTip = btnSilenceAlarm.ToolTip;
+
+            // Also runs SyncAlarmUi, so the alarm group starts out locked: at launch nothing
+            // is registered and nothing is being forwarded.
             UpdateStatus(DWMBClient.IsRegistered, DWMBClient.IsCapturing); //force false on registration since we used dummy values.
 
         }
@@ -192,6 +200,10 @@ namespace DWMB_AIO
 
             // keep the forwarding-health indicator in sync with start/stop transitions
             UpdateForwardStatus();
+
+            // Every registration/capture transition comes through here, so this is the one
+            // place the alarm group's lock needs driving from (see AlarmControlsAvailable).
+            SyncAlarmUi();
         }
 
         /// <summary>
@@ -248,6 +260,30 @@ namespace DWMB_AIO
         private static readonly SolidColorBrush AlarmDisarmedBrush = FrozenBrush(0xFF, 0xC1, 0x07); // cautionary amber/yellow
         private static readonly SolidColorBrush AlarmSetBrush = FrozenBrush(0x6B, 0x8E, 0x5A); // muted green
         private static readonly SolidColorBrush AlarmSoundingBrush = FrozenBrush(0xE5, 0x39, 0x35); // alert red
+        private static readonly SolidColorBrush AlarmUnavailableBrush = FrozenBrush(0xBD, 0xBD, 0xBD); // neutral grey
+
+        // How far the alarm checkboxes are faded while the group is locked. They can't use
+        // IsEnabled for this (see SyncAlarmUi), so the greying is done by hand.
+        private const double AlarmLockedOpacity = 0.55;
+
+        // The XAML tooltips, captured at construction so SyncAlarmUi can swap the
+        // "register first" explanation in and out without hard-coding copies of them here.
+        private object? alarmSoundToolTip;
+        private object? repeatDiscordPingToolTip;
+        private object? silenceAlarmToolTip;
+
+        // Set while we're programmatically correcting a checkbox, so its Checked/Unchecked
+        // handler can tell that write apart from a toggle the user made.
+        private bool suppressAlarmCheckboxEvents;
+
+        /// <summary>
+        /// Whether the alarm controls are usable. The alarm exists to flag messages DWMB is
+        /// forwarding, so it means nothing until the client is both registered and
+        /// capturing: pausing puts it back out of reach just as surely as never having
+        /// started, since a paused client forwards nothing for the alarm to fire on.
+        /// </summary>
+        private static bool AlarmControlsAvailable =>
+            DWMBClient.IsRegistered == true && DWMBClient.IsCapturing;
 
         private static SolidColorBrush FrozenBrush(byte r, byte g, byte b)
         {
@@ -269,6 +305,22 @@ namespace DWMB_AIO
         /// </summary>
         private void chkAlarmSound_CheckedChanged(object sender, RoutedEventArgs e)
         {
+            if (suppressAlarmCheckboxEvents)
+            {
+                return; // our own corrective write, not the user's toggle
+            }
+
+            if (!AlarmControlsAvailable)
+            {
+                // Normally unreachable: AlarmControl_Preview* swallow the activation before
+                // the box ever toggles. Something that bypasses input events (UI automation,
+                // a programmatic set) can still land here, so put the box back rather than
+                // arm an alarm whose Silence button is locked out of stopping it.
+                RevertAlarmCheckbox(chkAlarmSound, DWMBClient.AlarmSoundEnabled);
+                ShowAlarmUnavailableMessage();
+                return;
+            }
+
             bool enabled = chkAlarmSound.IsChecked == true;
             DWMBClient.AlarmSoundEnabled = enabled;
 
@@ -292,6 +344,19 @@ namespace DWMB_AIO
         /// </summary>
         private void chkRepeatDiscordPing_CheckedChanged(object sender, RoutedEventArgs e)
         {
+            if (suppressAlarmCheckboxEvents)
+            {
+                return; // our own corrective write, not the user's toggle
+            }
+
+            if (!AlarmControlsAvailable)
+            {
+                // See chkAlarmSound_CheckedChanged — same belt-and-braces undo.
+                RevertAlarmCheckbox(chkRepeatDiscordPing, DWMBClient.RepeatDiscordPingEnabled);
+                ShowAlarmUnavailableMessage();
+                return;
+            }
+
             bool enabled = chkRepeatDiscordPing.IsChecked == true;
             DWMBClient.RepeatDiscordPingEnabled = enabled;
 
@@ -307,7 +372,94 @@ namespace DWMB_AIO
 
         private void btnSilenceAlarm_Click(object sender, RoutedEventArgs e)
         {
+            if (!AlarmControlsAvailable)
+            {
+                // As in the checkbox handlers: the Preview* gate normally gets here first,
+                // this covers whatever it can't see.
+                ShowAlarmUnavailableMessage();
+                return;
+            }
+
             DWMBClient.SilenceAlarm();
+        }
+
+        /// <summary>
+        /// Restores a checkbox to <paramref name="value"/> without its Checked/Unchecked
+        /// handler treating the correction as a fresh user toggle (and recursing).
+        /// </summary>
+        private void RevertAlarmCheckbox(CheckBox box, bool value)
+        {
+            suppressAlarmCheckboxEvents = true;
+            try
+            {
+                box.IsChecked = value;
+            }
+            finally
+            {
+                suppressAlarmCheckboxEvents = false;
+            }
+        }
+
+        /// <summary>
+        /// Blocks mouse activation of an alarm control while the group is locked, and says
+        /// why instead of silently doing nothing. Handling the event in the tunnelling
+        /// Preview pass — before CheckBox/Button act on it — means the toggle or click never
+        /// happens at all, so there is no state left to undo afterwards. This is also why
+        /// the controls aren't simply IsEnabled=false: a disabled WPF element raises no
+        /// input events, leaving nothing to hang the explanation off.
+        /// </summary>
+        private void AlarmControl_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (AlarmControlsAvailable)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            ShowAlarmUnavailableMessage();
+        }
+
+        /// <summary>
+        /// Keyboard counterpart to <see cref="AlarmControl_PreviewMouseLeftButtonDown"/>:
+        /// Space toggles a focused CheckBox and Space/Enter press a focused Button, so the
+        /// lock has to cover those as well as the mouse.
+        /// </summary>
+        private void AlarmControl_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (AlarmControlsAvailable || (e.Key != Key.Space && e.Key != Key.Enter))
+            {
+                return;
+            }
+
+            e.Handled = true;
+            ShowAlarmUnavailableMessage();
+        }
+
+        private void ShowAlarmUnavailableMessage()
+        {
+            MessageBox.Show(
+                this,
+                BuildAlarmUnavailableMessage(),
+                "DWMB - Alarm Unavailable",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+
+        /// <summary>
+        /// Explains the lock, tailored to which half of "registered and forwarding" is
+        /// missing — telling someone who is registered but paused to go and register would
+        /// just send them looking for a button that's already been pressed. Doubles as the
+        /// tooltip on the locked controls (see <see cref="SyncAlarmUi"/>).
+        /// </summary>
+        private static string BuildAlarmUnavailableMessage()
+        {
+            return DWMBClient.IsRegistered == true
+                ? "The alarm controls are unavailable because message forwarding is paused.\n\n"
+                  + "Click Start to resume forwarding and they will become available again."
+                : "You must register before you can use the alarm controls.\n\n"
+                  + "Enter your callsign and registration code, then click Start. The alarm only "
+                  + "sounds for messages DWMB is actively forwarding, so there is nothing for it "
+                  + "to do until you are registered.";
         }
 
         /// <summary>
@@ -328,25 +480,63 @@ namespace DWMB_AIO
         }
 
         /// <summary>
-        /// Reflects the alarm's state — disarmed / armed-but-quiet / sounding — on the
-        /// Silence button's text and color, and drives the taskbar flash (only raised while
+        /// Reflects the alarm's state — unavailable / disarmed / armed-but-quiet / sounding
+        /// — on the Silence button's text and color, greys out and locks the whole alarm
+        /// group while it's unavailable, and drives the taskbar flash (only raised while
         /// sounding, never independently per message, so it tracks the alarm exactly).
-        /// The button stays enabled in all three states — including when a click would be a
+        /// The button stays enabled in all four states — including when a click would be a
         /// no-op (SilenceAlarm() no-ops if nothing is sounding) — because WPF's default
         /// disabled-button style would otherwise paint over these custom colors, and the
-        /// button's color is itself the point in the Disarmed/Set states.
+        /// button's color is itself the point in the Unavailable/Disarmed/Set states.
         /// </summary>
         private void SyncAlarmUi()
         {
+            bool available = AlarmControlsAvailable;
+
+            // Never leave an alarm sounding with no way to stop it. The Silence button is
+            // locked out below, so an alarm still going as the client leaves the forwarding
+            // state (Pause, Deregister, or a capture that died on its own) has to be
+            // silenced here — that also stops the repeat-ping loop, which hangs off
+            // AlarmPlayer.StateChanged. Silencing re-enters this method via
+            // AlarmStateChanged; that's harmless, since the nested pass sees IsAlarmSounding
+            // false and settles on exactly the state this one is about to paint.
+            if (!available && DWMBClient.IsAlarmSounding)
+            {
+                DWMBClient.SilenceAlarm();
+            }
+
             bool enabled = DWMBClient.AlarmSoundEnabled;
             bool sounding = DWMBClient.IsAlarmSounding;
 
+            // Greyed by hand rather than with IsEnabled, because a disabled WPF control
+            // raises no mouse or key events — there'd be no interaction left for
+            // AlarmControl_Preview* to explain the lock from. The checkboxes keep whatever
+            // the user last chose while locked; only their reachability changes.
+            chkAlarmSound.Opacity = available ? 1.0 : AlarmLockedOpacity;
+            chkRepeatDiscordPing.Opacity = available ? 1.0 : AlarmLockedOpacity;
+
             // Repeating is defined as "until the alarm is silenced", so it only means
             // anything while the alarm is armed. Greyed out rather than unchecked when the
-            // alarm is disarmed, so the user's choice survives arming/disarming.
-            chkRepeatDiscordPing.IsEnabled = enabled;
+            // alarm is disarmed, so the user's choice survives arming/disarming. While the
+            // group is locked it stays IsEnabled for the reason just above — the Preview
+            // gate, not IsEnabled, is what makes it inert.
+            chkRepeatDiscordPing.IsEnabled = !available || enabled;
 
-            if (!enabled)
+            // Hovering a greyed control should say why it's greyed, not describe something
+            // it won't currently do.
+            object? lockedToolTip = available ? null : BuildAlarmUnavailableMessage();
+            chkAlarmSound.ToolTip = lockedToolTip ?? alarmSoundToolTip;
+            chkRepeatDiscordPing.ToolTip = lockedToolTip ?? repeatDiscordPingToolTip;
+            btnSilenceAlarm.ToolTip = lockedToolTip ?? silenceAlarmToolTip;
+
+            if (!available)
+            {
+                StopAlarmButtonFlash();
+                btnSilenceAlarm.Content = "Alarm - Unavailable";
+                btnSilenceAlarm.Background = AlarmUnavailableBrush;
+                btnSilenceAlarm.Foreground = Brushes.Black;
+            }
+            else if (!enabled)
             {
                 StopAlarmButtonFlash();
                 btnSilenceAlarm.Content = "Alarm - Disarmed";

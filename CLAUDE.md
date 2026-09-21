@@ -152,13 +152,11 @@ organized into folders that map to sub-namespaces:
    arms a timer that re-POSTs that same message every 60s until the alarm stops —
    see the Repeat Discord ping bullet below.
 9. **Pause** stops capture; **Deregister** stops capture and calls
-   `/api/v1/deregister`, then unlocks the inputs. The alarm, if sounding (and by
-   extension any in-progress taskbar flash), is left alone by both — it's a local
-   "you have an unacknowledged message" indicator the user silences on their own
-   via the GUI, not tied to the connection lifecycle. The repeat loop splits the
-   difference: **Pause** leaves it running (the registration is still live), but
-   **Deregister** stops it, since there's no longer a registration to forward
-   against.
+   `/api/v1/deregister`, then unlocks the inputs. Both also lock the alarm controls
+   (see the Alarm controls bullet below) and, as a consequence, silence a sounding
+   alarm — with it any in-progress taskbar flash and the repeat loop, which hangs off
+   `AlarmPlayer.StateChanged`. Leaving the alarm sounding while its Silence button is
+   locked out would strand the user with a noise and no affordance to stop it.
 
 ## Conventions & gotchas
 
@@ -236,7 +234,9 @@ organized into folders that map to sub-namespaces:
 
 - **Repeat Discord ping (`chkRepeatDiscordPing`):** off by default, and only
   selectable while `chkAlarmSound` is armed (`SyncAlarmUi` drives its `IsEnabled`,
-  greying it out rather than unchecking it so the choice survives arming/disarming).
+  greying it out rather than unchecking it so the choice survives arming/disarming —
+  except while the whole alarm group is locked for want of registration, where it's
+  soft-disabled instead; see the Alarm controls bullet below).
   "Until the alarm is silenced" is the whole contract, so it's meaningless without an
   alarm to silence — and it's enforced structurally, not just in the GUI, because the
   loop is only armed when `Trigger()` reports it actually started the alarm, which
@@ -281,13 +281,15 @@ organized into folders that map to sub-namespaces:
 
 - **Silence button as a status readout:** `btnSilenceAlarm`'s text/color are set
   entirely from code in `SyncAlarmUi` (there's no XAML default beyond the initial
-  "Silence Alarm" text, immediately overwritten at startup) and reflect three
-  states: checkbox unchecked → "Alarm - Disarmed" / cautionary amber; checked but
+  "Silence Alarm" text, immediately overwritten at startup) and reflect four
+  states: not registered/forwarding → "Alarm - Unavailable" / neutral grey (see the
+  Alarm controls bullet below); checkbox unchecked → "Alarm - Disarmed" / cautionary
+  amber; checked but
   not sounding → "Alarm - Set" / muted green; sounding → "Silence Alarm",
   blinking red/transparent at 1Hz via `alarmFlashTimer` (a `DispatcherTimer`
   ticking every 500ms — half the blink period — started/stopped in `SyncAlarmUi`
   so it's never left running outside the sounding state). The button stays
-  `IsEnabled=true` in all three states, even though a click while not sounding is
+  `IsEnabled=true` in all four states, even though a click while not sounding is
   a no-op (`AlarmPlayer.Silence()` no-ops when nothing's playing) — WPF's default
   disabled-button style overrides a custom `Background` in most themes, which
   would otherwise hide the amber/green coloring entirely. Because `SyncAlarmUi`
@@ -295,6 +297,31 @@ organized into folders that map to sub-namespaces:
   checkbox alone, only from `AlarmPlayer` actually starting/stopping),
   `chkAlarmSound_CheckedChanged` also calls `SyncAlarmUi()` directly — otherwise
   arming/disarming while quiet wouldn't visibly update the button.
+
+- **Alarm controls require registration:** the alarm only exists to flag messages
+  DWMB is forwarding, so `chkAlarmSound`, `chkRepeatDiscordPing` and
+  `btnSilenceAlarm` are locked unless `MainWindow.AlarmControlsAvailable`
+  (`DWMBClient.IsRegistered == true && DWMBClient.IsCapturing`) — i.e. **Pause**
+  locks them again just as surely as never having started, since a paused client
+  forwards nothing for the alarm to fire on. The lock is driven from `SyncAlarmUi`,
+  which `UpdateStatus` now calls: that's the single choke point every
+  registration/capture transition already passes through.
+  The controls are **not** `IsEnabled=false`, deliberately: a disabled WPF element
+  raises no mouse or key events, so there'd be nothing left to hang the "register
+  first" explanation off. Instead they're soft-disabled — faded to
+  `AlarmLockedOpacity`, tooltips swapped for the explanation, and
+  `AlarmControl_PreviewMouseLeftButtonDown`/`AlarmControl_PreviewKeyDown` (wired to
+  all three in XAML) mark the event handled in the tunnelling pass and show a
+  dialog. Handling it in the Preview pass means the toggle or click never happens,
+  so there's no state to undo. The dialog text
+  (`BuildAlarmUnavailableMessage`, reused as the locked tooltip) is tailored to
+  which half of "registered and forwarding" is missing, so someone who is registered
+  but paused is told to click Start rather than to go and register. The
+  `Checked`/`Unchecked` and `Click` handlers re-check `AlarmControlsAvailable`
+  anyway, for activation paths that bypass input events (UI automation, a
+  programmatic set); the checkbox handlers undo the toggle via `RevertAlarmCheckbox`,
+  whose `suppressAlarmCheckboxEvents` flag keeps that corrective write from
+  re-entering them. Locking also silences a sounding alarm (see runtime flow step 9).
 
 Search for `TODO` before assuming a rough edge is a bug.
 
